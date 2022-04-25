@@ -13,7 +13,7 @@ __device__ void kernel_computeDelta3D_det(float x_delta, float y_delta, float z_
 
 __device__ void kernel_computeDelta3D_exc(float z_exc_frac, float* delta_g, float* delta_dzg);
 
-__device__ void kernel_DerivativeSpline(int* x_spl, int* y_spl, int* z_spl, int* z_spl_exc, float* delta_f, float* delta_dxf, float* delta_dyf, float* delta_dzf,float* delta_g,float* delta_dzg, const float* coef_det_d, const float* coef_exc_d, float* theta, float* dudt);
+__device__ void kernel_DerivativeSpline(bool offset_fit, int* x_spl, int* y_spl, int* z_spl, int* z_spl_exc, float* delta_f, float* delta_dxf, float* delta_dyf, float* delta_dzf,float* delta_g,float* delta_dzg, const float* coef_det_d, const float* coef_exc_d, float* theta, float* dudt);
 
 __device__ int kernel_cholesky(float* A, int n, float* L, float* U);
 

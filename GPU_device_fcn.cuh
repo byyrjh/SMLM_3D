@@ -200,10 +200,13 @@ __device__ inline void kernel_computeDelta3D_exc(float z_exc_frac, float* delta_
 	}
 }
 
-__device__ inline void kernel_DerivativeSpline(int* x_spl, int* y_spl, int* z_spl, int* z_spl_exc, float* delta_f, float* delta_dxf, float* delta_dyf, float* delta_dzf, float* delta_g, float* delta_dzg, const float* coef_det_d, const float* coef_exc_d, float* theta, float* dudt)
+__device__ inline void kernel_DerivativeSpline(bool offset_fit, int* x_spl, int* y_spl, int* z_spl, int* z_spl_exc, float* delta_f, float* delta_dxf, float* delta_dyf, float* delta_dzf, float* delta_g, float* delta_dzg, const float* coef_det_d, const float* coef_exc_d, float* theta, float* dudt)
 {
 	float temp = 0, temp_g = 0, temp_dzg = 0;
-	memset(dudt, 0, fit_para_num * sizeof(float));
+	if (offset_fit)
+		memset(dudt, 0, fit_para_num * sizeof(float));
+	else
+		memset(dudt, 0, (fit_para_num-1) * sizeof(float));
 	for (int i = 0; i < 64; i++) {
 		temp += delta_f[i] * coef_det_d[i * (spline_x * spline_y * spline_z) + (*z_spl) * (spline_x * spline_y) + (*y_spl) * spline_y + *x_spl];
 		dudt[0] += delta_dxf[i] * coef_det_d[i * (spline_x * spline_y * spline_z) + (*z_spl) * (spline_x * spline_y) + (*y_spl) * spline_y + *x_spl];
@@ -220,7 +223,7 @@ __device__ inline void kernel_DerivativeSpline(int* x_spl, int* y_spl, int* z_sp
 	dudt[2] = -1.0f * theta[3] * temp_g * dudt[2] - theta[3] * temp * temp_dzg;
 	dudt[3] = temp * temp_g;
 	dudt[4] = 1.0f;
-	dudt[5] = -1.0f * theta[3] * temp * temp_dzg;
+	if (offset_fit) dudt[5] = -1.0f * theta[3] * temp * temp_dzg;
 }
 
 __device__ inline int kernel_cholesky(float* A, int n, float* L, float* U) //The Cholesky–Banachiewicz and Cholesky–Crout algorithms
@@ -253,7 +256,8 @@ __device__ inline void kernel_luEvaluate(float* L, float* U, float* b, const int
 {
 	//Ax = b -> LUx = b. Then y is defined to be Ux
 	//for sigmaxy, we have 6 parameters
-	float y[fit_para_num] = { 0 };
+	float* y = new float[n];
+	memset(y, 0, n * sizeof(float));
 	// Forward solve Ly = b
 	for (int i = 0; i < n; i++)
 	{
@@ -274,6 +278,7 @@ __device__ inline void kernel_luEvaluate(float* L, float* U, float* b, const int
 		}
 		x[i] /= U[i * n + i];
 	}
+	delete[] y;
 }
 
 __device__ inline void kernel_MatInvN(float* M, float* Minv, float* DiagMinv, int sz) 

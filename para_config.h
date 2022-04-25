@@ -1,3 +1,5 @@
+#define Exposuretime 5 //unit ms
+#define Data_type 1  // experiment data=1  simulation data=2
 #define seg_size 11 //unit pixel  has to be odd number
 #define slice_num 3  //unit      has to be odd number 7 is maximum number
 #define emitter_num 447  //unit 

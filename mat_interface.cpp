@@ -14,9 +14,8 @@
 #include <cmath>
 
 extern "C"
-void cuda_fitting(dim3 dimgrid, dim3 dimblock, const float* coef_det_d, const float* coef_exc_d, const float* data_d, const float* offset_map_d, const float* var_map_d,
+void cuda_fitting(dim3 dimgrid, dim3 dimblock, const int* num_para, const float* coef_det_d, const float* coef_exc_d, const float* data_d, const float* offset_map_d, const float* var_map_d,
 	const float* gain_map_d, const float* map_ptr_x_d, const float* map_ptr_y_d, float* fitting_para_d, float* CRLBs_d, float* LogLikelihood_d, float* device_debug_d);
-
 void cudasafe(cudaError_t err, char* str, int lineNumber);
 void cudasafe(cudaError_t err, char* str, int lineNumber)
 {
@@ -147,14 +146,16 @@ int main()
 	float* map_ptr_x_d;
 	float* map_ptr_y_d;
 
-	float* fitting_para_d; // dimension 5*1000  x y z h bg
+	float* fitting_para_d; // dimension   x y z h bg
 	float* fitting_para_h = new float[emitter_num* fit_para_num];
 	float* CRLBs_d;     // dimension 5*1000  x y z h bg
 	float* CRLBs_h = new float[emitter_num * fit_para_num];
 	float* LogLikelihood_d;  // dimension 1000  for the whole pixel
 	float* device_debug_d;
+	int* num_paras_d;
 	float* device_debug_h = new float[emitter_num * 100];
-	
+	int num_fitting_paras = fit_para_num;
+
 	int deviceCount = 0;
 	cudaDeviceProp deviceProp;
 	cudaGetDeviceCount(&deviceCount);
@@ -162,42 +163,48 @@ int main()
 	const size_t availableMemory = deviceProp.totalGlobalMem/1024/1024;//unit MByte
 
 
-	cudasafe(cudaMalloc((void**)&coef_det_d, spline_x* spline_y* spline_z* num_coef_per_pix * sizeof(float)), "Mem alloc for data_a failed.", __LINE__);
-	cudasafe(cudaMalloc((void**)&coef_exc_d, spline_z* num_coef_per_pix_axial * sizeof(float)), "Mem alloc for data_a failed.", __LINE__);
-	cudasafe(cudaMalloc((void**)&data_d, seg_size* seg_size* slice_num* emitter_num * sizeof(float)), "Mem alloc for data_a failed.", __LINE__);
-	cudasafe(cudaMalloc((void**)&offset_map_d, cam_map_size* cam_map_size * sizeof(float)), "Mem alloc for data_a failed.", __LINE__);
-	cudasafe(cudaMalloc((void**)&var_map_d, cam_map_size* cam_map_size * sizeof(float)), "Mem alloc for data_a failed.", __LINE__);
-	cudasafe(cudaMalloc((void**)&gain_map_d, cam_map_size* cam_map_size * sizeof(float)), "Mem alloc for data_a failed.", __LINE__);
-	cudasafe(cudaMalloc((void**)&map_ptr_x_d, emitter_num * sizeof(float)), "Mem alloc for data_a failed.", __LINE__);
-	cudasafe(cudaMalloc((void**)&map_ptr_y_d, emitter_num * sizeof(float)), "Mem alloc for data_a failed.", __LINE__);
-	cudasafe(cudaMalloc((void**)&fitting_para_d, fit_para_num * emitter_num * sizeof(float)), "Mem alloc for data_a failed.", __LINE__);
-	cudasafe(cudaMalloc((void**)&CRLBs_d, fit_para_num * emitter_num * sizeof(float)), "Mem alloc for data_a failed.", __LINE__);
-	cudasafe(cudaMalloc((void**)&LogLikelihood_d, emitter_num * sizeof(float)), "Mem alloc for data_a failed.", __LINE__);
-	cudasafe(cudaMalloc((void**)&device_debug_d, emitter_num * 100 * sizeof(float)), "Mem alloc for data_a failed.", __LINE__);
+	cudasafe(cudaMalloc((void**)&coef_det_d, spline_x* spline_y* spline_z* num_coef_per_pix * sizeof(float)), "Mem alloc for PSF_det failed.", __LINE__);
+	cudasafe(cudaMalloc((void**)&coef_exc_d, spline_z* num_coef_per_pix_axial * sizeof(float)), "Mem alloc for PSF_exc failed.", __LINE__);
+	cudasafe(cudaMalloc((void**)&data_d, seg_size* seg_size* slice_num* emitter_num * sizeof(float)), "Mem alloc for seg_data failed.", __LINE__);
+	cudasafe(cudaMalloc((void**)&offset_map_d, cam_map_size* cam_map_size * sizeof(float)), "Mem alloc for offset_map failed.", __LINE__);
+	cudasafe(cudaMalloc((void**)&var_map_d, cam_map_size* cam_map_size * sizeof(float)), "Mem alloc for var_map failed.", __LINE__);
+	cudasafe(cudaMalloc((void**)&gain_map_d, cam_map_size* cam_map_size * sizeof(float)), "Mem alloc for gain_map failed.", __LINE__);
+	cudasafe(cudaMalloc((void**)&map_ptr_x_d, emitter_num * sizeof(float)), "Mem alloc for LUT_x failed.", __LINE__);
+	cudasafe(cudaMalloc((void**)&map_ptr_y_d, emitter_num * sizeof(float)), "Mem alloc for LUT_y failed.", __LINE__);
+	cudasafe(cudaMalloc((void**)&fitting_para_d, fit_para_num * emitter_num * sizeof(float)), "Mem alloc for fitting_parameters failed.", __LINE__);
+	cudasafe(cudaMalloc((void**)&CRLBs_d, fit_para_num * emitter_num * sizeof(float)), "Mem alloc for CRLB failed.", __LINE__);
+	cudasafe(cudaMalloc((void**)&LogLikelihood_d, emitter_num * sizeof(float)), "Mem alloc for log_likelihood failed.", __LINE__);
+	cudasafe(cudaMalloc((void**)&device_debug_d, emitter_num * 100 * sizeof(float)), "Mem alloc for device_debug failed.", __LINE__);
+	cudasafe(cudaMalloc((void**)&num_paras_d, sizeof(int)), "Mem alloc for num_para failed.", __LINE__);
 
-	cudasafe(cudaMemcpy(coef_det_d, coef_det_h, spline_x* spline_y* spline_z* num_coef_per_pix * sizeof(float), cudaMemcpyHostToDevice), "Memory for data_a copy failed", __LINE__);
-	cudasafe(cudaMemcpy(coef_exc_d, coef_exc_h, spline_z* num_coef_per_pix_axial * sizeof(float), cudaMemcpyHostToDevice), "Memory for data_a copy failed", __LINE__);
-	cudasafe(cudaMemcpy(data_d, data_h, seg_size* seg_size* slice_num* emitter_num * sizeof(float), cudaMemcpyHostToDevice), "Memory for data_a copy failed", __LINE__);
-	cudasafe(cudaMemcpy(offset_map_d, offset_map_h, cam_map_size* cam_map_size * sizeof(float), cudaMemcpyHostToDevice), "Memory for data_a copy failed", __LINE__);
-	cudasafe(cudaMemcpy(var_map_d, var_map_h, cam_map_size* cam_map_size * sizeof(float), cudaMemcpyHostToDevice), "Memory for data_a copy failed", __LINE__);
-	cudasafe(cudaMemcpy(gain_map_d, gain_map_h, cam_map_size* cam_map_size * sizeof(float), cudaMemcpyHostToDevice), "Memory for data_a copy failed", __LINE__);
-	cudasafe(cudaMemcpy(map_ptr_x_d, map_ptr_x_h, emitter_num * sizeof(float), cudaMemcpyHostToDevice), "Memory for data_a copy failed", __LINE__);
-	cudasafe(cudaMemcpy(map_ptr_y_d, map_ptr_y_h, emitter_num * sizeof(float), cudaMemcpyHostToDevice), "Memory for data_a copy failed", __LINE__);
-	cudasafe(cudaMemset(fitting_para_d, 0, fit_para_num* emitter_num * sizeof(float)), "Failed cudaMemset on d_CRLBs.", __LINE__);
-	cudasafe(cudaMemset(CRLBs_d, 0, fit_para_num* emitter_num * sizeof(float)), "Failed cudaMemset on d_CRLBs.", __LINE__);
-	cudasafe(cudaMemset(LogLikelihood_d, 0, emitter_num * sizeof(float)), "Failed cudaMemset on d_CRLBs.", __LINE__);
-	cudasafe(cudaMemset(device_debug_d, 0, emitter_num * 100 * sizeof(float)), "Failed cudaMemset on d_CRLBs.", __LINE__);
+	cudasafe(cudaMemcpy(coef_det_d, coef_det_h, spline_x* spline_y* spline_z* num_coef_per_pix * sizeof(float), cudaMemcpyHostToDevice), "Memory for PSF_det copy failed", __LINE__);
+	cudasafe(cudaMemcpy(coef_exc_d, coef_exc_h, spline_z* num_coef_per_pix_axial * sizeof(float), cudaMemcpyHostToDevice), "Memory for PSF_exc copy failed", __LINE__);
+	cudasafe(cudaMemcpy(data_d, data_h, seg_size* seg_size* slice_num* emitter_num * sizeof(float), cudaMemcpyHostToDevice), "Memory for seg_data copy failed", __LINE__);
+	cudasafe(cudaMemcpy(offset_map_d, offset_map_h, cam_map_size* cam_map_size * sizeof(float), cudaMemcpyHostToDevice), "Memory for offset_map copy failed", __LINE__);
+	cudasafe(cudaMemcpy(var_map_d, var_map_h, cam_map_size* cam_map_size * sizeof(float), cudaMemcpyHostToDevice), "Memory for var_map copy failed", __LINE__);
+	cudasafe(cudaMemcpy(gain_map_d, gain_map_h, cam_map_size* cam_map_size * sizeof(float), cudaMemcpyHostToDevice), "Memory for gain_map copy failed", __LINE__);
+	cudasafe(cudaMemcpy(map_ptr_x_d, map_ptr_x_h, emitter_num * sizeof(float), cudaMemcpyHostToDevice), "Memory for LUT_x copy failed", __LINE__);
+	cudasafe(cudaMemcpy(map_ptr_y_d, map_ptr_y_h, emitter_num * sizeof(float), cudaMemcpyHostToDevice), "Memory for LUT_y copy failed", __LINE__);
+	cudasafe(cudaMemset(fitting_para_d, 0, fit_para_num* emitter_num * sizeof(float)), "Failed cudaMemset on fitting_parameters.", __LINE__);
+	cudasafe(cudaMemset(CRLBs_d, 0, fit_para_num* emitter_num * sizeof(float)), "Failed cudaMemset on CRLB.", __LINE__);
+	cudasafe(cudaMemset(LogLikelihood_d, 0, emitter_num * sizeof(float)), "Failed cudaMemset on log_likelihood.", __LINE__);
+	cudasafe(cudaMemset(device_debug_d, 0, emitter_num * 100 * sizeof(float)), "Failed cudaMemset on device_debug.", __LINE__);
+	cudasafe(cudaMemcpy(num_paras_d, &num_fitting_paras, sizeof(int), cudaMemcpyHostToDevice), "Memory for num_para copy failed", __LINE__);
 
 	dim3 dimBlock = block_size;  //256 threads per block   index from 0 to 255
 	dim3 dimGrid = ceil((float)emitter_num / (float)block_size);  // 4;
-	
-	cuda_fitting(dimGrid, dimBlock, coef_det_d, coef_exc_d, data_d, offset_map_d, var_map_d, gain_map_d, map_ptr_x_d, map_ptr_y_d, fitting_para_d, CRLBs_d, LogLikelihood_d, device_debug_d);
-
+	cuda_fitting(dimGrid, dimBlock, num_paras_d, coef_det_d, coef_exc_d, data_d, offset_map_d, var_map_d, gain_map_d, map_ptr_x_d, map_ptr_y_d, fitting_para_d, CRLBs_d, LogLikelihood_d, device_debug_d);
 	cudasafe(cudaDeviceSynchronize(), "sync failed", __LINE__);
-	cudasafe(cudaMemcpy(fitting_para_h, fitting_para_d, fit_para_num * emitter_num * sizeof(float), cudaMemcpyDeviceToHost),"cudaMemcpy failed for fitting_para_d.", __LINE__);
-	cudasafe(cudaMemcpy(CRLBs_h, CRLBs_d, fit_para_num * emitter_num * sizeof(float), cudaMemcpyDeviceToHost), "cudaMemcpy failed for CRLBs_d.", __LINE__);
-	cudasafe(cudaMemcpy(LogLikelihood_h, LogLikelihood_d, emitter_num * sizeof(float), cudaMemcpyDeviceToHost), "cudaMemcpy failed for LogLikelihood_d.", __LINE__);
-	cudasafe(cudaMemcpy(device_debug_h, device_debug_d, emitter_num * 100 * sizeof(float), cudaMemcpyDeviceToHost), "cudaMemcpy failed for LogLikelihood_d.", __LINE__);
+	num_fitting_paras = num_fitting_paras - 1;
+	cudasafe(cudaMemcpy(num_paras_d, &num_fitting_paras, sizeof(int), cudaMemcpyHostToDevice), "Memory for num_para copy failed", __LINE__);
+	cudasafe(cudaMemset(device_debug_d, 0, emitter_num * 100 * sizeof(float)), "Failed cudaMemset on device_debug.", __LINE__);
+	cuda_fitting(dimGrid, dimBlock, num_paras_d, coef_det_d, coef_exc_d, data_d, offset_map_d, var_map_d, gain_map_d, map_ptr_x_d, map_ptr_y_d, fitting_para_d, CRLBs_d, LogLikelihood_d, device_debug_d);
+	cudasafe(cudaDeviceSynchronize(), "sync failed", __LINE__);
+
+	cudasafe(cudaMemcpy(fitting_para_h, fitting_para_d, fit_para_num * emitter_num * sizeof(float), cudaMemcpyDeviceToHost),"cudaMemcpy failed for fitting_parameters.", __LINE__);
+	cudasafe(cudaMemcpy(CRLBs_h, CRLBs_d, fit_para_num * emitter_num * sizeof(float), cudaMemcpyDeviceToHost), "cudaMemcpy failed for CRLB.", __LINE__);
+	cudasafe(cudaMemcpy(LogLikelihood_h, LogLikelihood_d, emitter_num * sizeof(float), cudaMemcpyDeviceToHost), "cudaMemcpy failed for log_likelihood.", __LINE__);
+	cudasafe(cudaMemcpy(device_debug_h, device_debug_d, emitter_num * 100 * sizeof(float), cudaMemcpyDeviceToHost), "cudaMemcpy failed for device_debug.", __LINE__);
 
 
 
@@ -259,39 +266,24 @@ int main()
 	mxDestroyArray(pa1);
 	matClose(pmat);
 	
-	delete[] fitting_para_crlb;
-	delete[] fitting_para_end;
-	delete[] fitting_para_ChiSq;
-	delete[] device_debug_out;
+	delete[] fitting_para_crlb, fitting_para_end, fitting_para_ChiSq, device_debug_out;
 	// .mat output end
-	
+	delete[] coef_det_h, coef_exc_h, data_h, offset_map_h, var_map_h, gain_map_h, map_ptr_x_h, map_ptr_y_h;
+	delete[] fitting_para_h, CRLBs_h, LogLikelihood_h, device_debug_h;
 
-	delete[] coef_det_h;
-	delete[] coef_exc_h;
-	delete[] data_h;
-	delete[] offset_map_h;
-	delete[] var_map_h;
-	delete[] gain_map_h;
-	delete[] map_ptr_x_h;
-	delete[] map_ptr_y_h;
-	delete[] fitting_para_h;
-	delete[] CRLBs_h;
-	delete[] LogLikelihood_h;
-	delete[] device_debug_h;
-	
-
-	cudasafe(cudaFree(coef_det_d), "cudaFree failed on d_data.", __LINE__);
-	cudasafe(cudaFree(coef_exc_d), "cudaFree failed on d_data.", __LINE__);
-	cudasafe(cudaFree(data_d), "cudaFree failed on d_data.", __LINE__);
-	cudasafe(cudaFree(offset_map_d), "cudaFree failed on d_data.", __LINE__);
-	cudasafe(cudaFree(var_map_d), "cudaFree failed on d_data.", __LINE__);
-	cudasafe(cudaFree(gain_map_d), "cudaFree failed on d_data.", __LINE__);
-	cudasafe(cudaFree(map_ptr_x_d), "cudaFree failed on d_data.", __LINE__);
-	cudasafe(cudaFree(map_ptr_y_d), "cudaFree failed on d_data.", __LINE__);
-	cudasafe(cudaFree(fitting_para_d), "cudaFree failed on d_data.", __LINE__);
-	cudasafe(cudaFree(CRLBs_d), "cudaFree failed on d_data.", __LINE__);
-	cudasafe(cudaFree(LogLikelihood_d), "cudaFree failed on d_data.", __LINE__);
-	cudasafe(cudaFree(device_debug_d), "cudaFree failed on d_data.", __LINE__);
+	cudasafe(cudaFree(coef_det_d), "cudaFree failed on coef_det_d.", __LINE__);
+	cudasafe(cudaFree(coef_exc_d), "cudaFree failed on coef_exc_d.", __LINE__);
+	cudasafe(cudaFree(data_d), "cudaFree failed on data_d.", __LINE__);
+	cudasafe(cudaFree(offset_map_d), "cudaFree failed on offset_map_d.", __LINE__);
+	cudasafe(cudaFree(var_map_d), "cudaFree failed on var_map_d.", __LINE__);
+	cudasafe(cudaFree(gain_map_d), "cudaFree failed on gain_map_d.", __LINE__);
+	cudasafe(cudaFree(map_ptr_x_d), "cudaFree failed on map_ptr_x_d.", __LINE__);
+	cudasafe(cudaFree(map_ptr_y_d), "cudaFree failed on map_ptr_y_d.", __LINE__);
+	cudasafe(cudaFree(fitting_para_d), "cudaFree failed on fitting_para_d.", __LINE__);
+	cudasafe(cudaFree(CRLBs_d), "cudaFree failed on CRLBs_d.", __LINE__);
+	cudasafe(cudaFree(LogLikelihood_d), "cudaFree failed on LogLikelihood_d.", __LINE__);
+	cudasafe(cudaFree(device_debug_d), "cudaFree failed on device_debug_d.", __LINE__);
+	cudasafe(cudaFree(num_paras_d), "cudaFree failed on num_paras_d.", __LINE__);
 	cudasafe(cudaDeviceReset(), "sync failed", __LINE__);
 
 }
