@@ -12,7 +12,12 @@
 #include <cuda.h>
 #include "para_config.h"
 #include <cmath>
+#include <filesystem>
+#include <string>
+#include <vector>
 
+using std::cout; using std::cin; using std::endl; using std::string; using std::vector;
+using std::filesystem::current_path; using std::to_string;
 extern "C"
 void cuda_fitting(dim3 dimgrid, dim3 dimblock, const int* num_para, const float* coef_det_d, const float* coef_exc_d, const float* data_d, const float* offset_map_d, const float* var_map_d,
 	const float* gain_map_d, const float* map_ptr_x_d, const float* map_ptr_y_d, float* fitting_para_d, float* CRLBs_d, float* LogLikelihood_d, float* device_debug_d);
@@ -38,18 +43,10 @@ void cudasafe(cudaError_t err, char* str, int lineNumber)
 
 int main()
 {
-	MATFile* curent_mat;
-	mxArray* pa;
-	const char* name;
-	const char* coef_mx_name_det = "coeff_det.mat";
-	const char* coef_mx_name_exc = "coeff_exc.mat";
-	const char* data_mx_name = "seg_data.mat";
-	const char* offset_map_name = "offset_map.mat";
-	const char* var_map_name = "var_map.mat";
-	const char* gain_map_name = "gain_map.mat";
-	const char* map_ptr_x_name = "map_ptr_x.mat";
-	const char* map_ptr_y_name = "map_ptr_y.mat";
-
+	string Cur_dir = current_path().parent_path().string();
+	string data_path = Cur_dir + "\\segment_data\\";
+	string cali_path = Cur_dir + "\\setup_calibration\\";
+	string seg_data_path = Cur_dir + "\\segment_data\\";
 	float* coef_det_h = new float[spline_x * spline_y * spline_z * num_coef_per_pix];
 	float* coef_exc_h = new float[spline_z * num_coef_per_pix_axial];
 	float* data_h = new float[seg_size * seg_size * slice_num * emitter_num];
@@ -59,6 +56,66 @@ int main()
 	float* map_ptr_x_h = new float[emitter_num];
 	float* map_ptr_y_h = new float[emitter_num];
 	float* LogLikelihood_h = new float[emitter_num];
+	float* log_file_h = new float[emitter_num*2];
+	MATFile* curent_mat;
+	mxArray* pa;
+	const char* name;
+	if (Data_type == 1)  // Experiment data
+	{
+		string cam_cali_path = cali_path+ "camera";
+		cam_cali_path += to_string(CamIdx);
+		cam_cali_path += "_";
+		cam_cali_path += to_string(Exposuretime);
+		cam_cali_path += "ms.mat";
+		const char* cali_data_name = cam_cali_path.c_str();
+		curent_mat = matOpen(cali_data_name, "r");
+		matGetNextVariableInfo(curent_mat, &name);
+		pa = matGetVariable(curent_mat, name);
+		memcpy(gain_map_h, (float*)mxGetData(pa), cam_map_size * cam_map_size * sizeof(float));
+		matGetNextVariableInfo(curent_mat, &name);
+		pa = matGetVariable(curent_mat, name);
+		memcpy(offset_map_h, (float*)mxGetData(pa), cam_map_size * cam_map_size * sizeof(float));
+		matGetNextVariableInfo(curent_mat, &name);
+		pa = matGetVariable(curent_mat, name);
+		memcpy(var_map_h, (float*)mxGetData(pa), cam_map_size * cam_map_size * sizeof(float));
+	}
+	else if (Data_type == 2)  // Simulation data
+	{
+		string offset_path_simu = cali_path + "offset_map.mat";
+		string var_path_simu = cali_path + "var_map.mat";
+		string gain_path_simu = cali_path + "gain_map.mat";
+		const char* offset_map_name = offset_path_simu.c_str();
+		const char* var_map_name = var_path_simu.c_str();
+		const char* gain_map_name = gain_path_simu.c_str();
+		curent_mat = matOpen(offset_map_name, "r");
+		matGetNextVariableInfo(curent_mat, &name);
+		pa = matGetVariable(curent_mat, name);
+		memcpy(offset_map_h, (float*)mxGetData(pa), cam_map_size * cam_map_size * sizeof(float));
+		curent_mat = matOpen(var_map_name, "r");
+		matGetNextVariableInfo(curent_mat, &name);
+		pa = matGetVariable(curent_mat, name);
+		memcpy(var_map_h, (float*)mxGetData(pa), cam_map_size * cam_map_size * sizeof(float));
+		curent_mat = matOpen(gain_map_name, "r");
+		matGetNextVariableInfo(curent_mat, &name);
+		pa = matGetVariable(curent_mat, name);
+		memcpy(gain_map_h, (float*)mxGetData(pa), cam_map_size * cam_map_size * sizeof(float));
+	}
+	else
+	{
+		return 0;
+	}
+	string coef_mx_name_det_str = seg_data_path + "coeff_det_exper.mat";
+	string coef_mx_name_exc_str = seg_data_path + "coeff_exc_exper.mat";
+	string data_mx_name_str = seg_data_path + "seg_data.mat";
+	string map_ptr_x_name_str = seg_data_path + "map_ptr_x.mat";
+	string map_ptr_y_name_str = seg_data_path + "map_ptr_y.mat";
+	string log_file_name_str = seg_data_path + "log_file.mat";
+	const char* coef_mx_name_det = coef_mx_name_det_str.c_str();
+	const char* coef_mx_name_exc = coef_mx_name_exc_str.c_str();
+	const char* data_mx_name = data_mx_name_str.c_str();
+	const char* map_ptr_x_name = map_ptr_x_name_str.c_str();
+	const char* map_ptr_y_name = map_ptr_y_name_str.c_str();
+	const char* log_file_name = log_file_name_str.c_str();
 
 	curent_mat = matOpen(coef_mx_name_det, "r");
 	matGetNextVariableInfo(curent_mat, &name);
@@ -75,21 +132,6 @@ int main()
 	pa = matGetVariable(curent_mat, name);
 	memcpy(data_h, (float*)mxGetData(pa), seg_size * seg_size * slice_num * emitter_num * sizeof(float));
 
-	curent_mat = matOpen(offset_map_name, "r");
-	matGetNextVariableInfo(curent_mat, &name);
-	pa = matGetVariable(curent_mat, name);
-	memcpy(offset_map_h, (float*)mxGetData(pa), cam_map_size * cam_map_size * sizeof(float));
-
-	curent_mat = matOpen(var_map_name, "r");
-	matGetNextVariableInfo(curent_mat, &name);
-	pa = matGetVariable(curent_mat, name);
-	memcpy(var_map_h, (float*)mxGetData(pa), cam_map_size * cam_map_size * sizeof(float));
-
-	curent_mat = matOpen(gain_map_name, "r");
-	matGetNextVariableInfo(curent_mat, &name);
-	pa = matGetVariable(curent_mat, name);
-	memcpy(gain_map_h, (float*)mxGetData(pa), cam_map_size * cam_map_size * sizeof(float));
-
 	curent_mat = matOpen(map_ptr_x_name, "r");
 	matGetNextVariableInfo(curent_mat, &name);
 	pa = matGetVariable(curent_mat, name);
@@ -100,6 +142,13 @@ int main()
 	pa = matGetVariable(curent_mat, name);
 	memcpy(map_ptr_y_h, (float*)mxGetData(pa), emitter_num * sizeof(float));
 
+	curent_mat = matOpen(log_file_name, "r");
+	matGetNextVariableInfo(curent_mat, &name);
+	pa = matGetVariable(curent_mat, name);
+	memcpy(log_file_h, (float*)mxGetData(pa), emitter_num * 2 * sizeof(float));
+
+	vector<float> Time;
+	vector<float> scan_status;
 
 	// data conversion law abcd(:,:,:,1)= 1 2  5 6  abcd(:,:,:,2)= 9  10   13 14
 	//                                    3 4; 7 8                 11 12 ; 15 16
@@ -191,6 +240,8 @@ int main()
 	cudasafe(cudaMemset(device_debug_d, 0, emitter_num * 100 * sizeof(float)), "Failed cudaMemset on device_debug.", __LINE__);
 	cudasafe(cudaMemcpy(num_paras_d, &num_fitting_paras, sizeof(int), cudaMemcpyHostToDevice), "Memory for num_para copy failed", __LINE__);
 
+	// cuda_kernel start 
+
 	dim3 dimBlock = block_size;  //256 threads per block   index from 0 to 255
 	dim3 dimGrid = ceil((float)emitter_num / (float)block_size);  // 4;
 	cuda_fitting(dimGrid, dimBlock, num_paras_d, coef_det_d, coef_exc_d, data_d, offset_map_d, var_map_d, gain_map_d, map_ptr_x_d, map_ptr_y_d, fitting_para_d, CRLBs_d, LogLikelihood_d, device_debug_d);
@@ -206,7 +257,7 @@ int main()
 	cudasafe(cudaMemcpy(LogLikelihood_h, LogLikelihood_d, emitter_num * sizeof(float), cudaMemcpyDeviceToHost), "cudaMemcpy failed for log_likelihood.", __LINE__);
 	cudasafe(cudaMemcpy(device_debug_h, device_debug_d, emitter_num * 100 * sizeof(float), cudaMemcpyDeviceToHost), "cudaMemcpy failed for device_debug.", __LINE__);
 
-
+	// cuda_kernel end
 
 	for (int i = 0; i < emitter_num; i++)
 	{
@@ -233,10 +284,14 @@ int main()
 	}
 	MATFile* pmat;
 	mxArray* pa1;
-	const char* file_crlb = "crlb.mat";
-	const char* file_fitting_para = "fitting_result.mat";
-	const char* finalChiSq = "ChiSq.mat";
-	const char* device_debug_out_char = "device_debug_out.mat";
+	string file_crlb_full = seg_data_path + "crlb.mat";
+	string file_fitting_para_full = seg_data_path + "fitting_result.mat";
+	string finalChiSq_full = seg_data_path + "ChiSq.mat";
+	string device_debug_out_char_full = seg_data_path + "device_debug_out.mat";
+	const char* file_crlb = file_crlb_full.c_str();
+	const char* file_fitting_para = file_fitting_para_full.c_str();
+	const char* finalChiSq = finalChiSq_full.c_str();
+	const char* device_debug_out_char = device_debug_out_char_full.c_str();
 
 	pmat = matOpen(file_crlb, "w");
 	pa1 = mxCreateDoubleMatrix(fit_para_num, emitter_num, mxREAL);

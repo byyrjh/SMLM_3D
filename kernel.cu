@@ -12,7 +12,7 @@ __global__ void kernel_cuda_fitting(const int* num_para, const float* coef_det_d
 	int bx = blockIdx.x;
 	int idx = bx* block_size + tx;
 	if (idx >= emitter_num) return;
-	if (idx <1000)
+	if (idx < emitter_num)
 	{
 		float offset_global = 0;
 		bool offset_fit;
