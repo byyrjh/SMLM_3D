@@ -5,18 +5,20 @@
 #include "para_config.h"
 
 
-__global__ void kernel_cuda_fitting(const int* num_para, const float* coef_det_d, const float* coef_exc_d, const float* data_d, const float* offset_map_d, const float* var_map_d,
+__global__ void kernel_cuda_fitting(const int* para_config, const float* coef_det_d, const float* coef_exc_d, const float* data_d, const float* offset_map_d, const float* var_map_d,
 	const float* gain_map_d, const float* map_ptr_x_d, const float* map_ptr_y_d, float* fitting_para_d, float* CRLBs_d, float* LogLikelihood_d,float* device_debug_d)
 {
 	int tx = threadIdx.x;
 	int bx = blockIdx.x;
-	int idx = bx* block_size + tx;
-	if (idx >= emitter_num) return;
-	if (idx < emitter_num)
+	int idx = bx * block_size + tx + *(para_config + 1) - 1;
+	int num_para[1] = { 0 };
+	*num_para = *para_config;
+	if ((bx * block_size + tx) >= *(para_config + 2)) return;
+	if ((bx * block_size + tx) < *(para_config + 2))
 	{
 		float offset_global = 0;
 		bool offset_fit;
-		if (*num_para == 6)
+		if (*num_para == 6)             // config   num_para(5 or 6)   initial emitter idx    number of emitters to fit
 			offset_fit = true;
 		else
 			offset_fit = false;
@@ -74,7 +76,7 @@ __global__ void kernel_cuda_fitting(const int* num_para, const float* coef_det_d
 		}
 		else
 		{
-			for (int i = 0; i < emitter_num; i++) offset_global += (*(fitting_para_d + i * fit_para_num + 5)) / emitter_num;
+			for (int i = 0; i < *(para_config + 2); i++) offset_global += (*(fitting_para_d + (*(para_config + 1) - 1) * fit_para_num + i * fit_para_num + 5)) / (*(para_config + 2));
 			for (int i = 0; i < 5; i++) NewTheta[i] = *(fitting_para_d + idx * fit_para_num + i);
 			NewTheta[5] = offset_global;
 		}
@@ -300,12 +302,13 @@ __global__ void kernel_cuda_fitting(const int* num_para, const float* coef_det_d
 		delete[] NewDudt, M, Minv, Diag;
 		return;
 	}//end to if statement
+	
 }
 
 
 extern "C"
-void cuda_fitting(dim3 dimgrid, dim3 dimblock, const int* num_para, const float* coef_det_d, const float* coef_exc_d, const float* data_d, const float* offset_map_d, const float* var_map_d,
+void cuda_fitting(dim3 dimgrid, dim3 dimblock, const int* para_config, const float* coef_det_d, const float* coef_exc_d, const float* data_d, const float* offset_map_d, const float* var_map_d,
 	const float* gain_map_d, const float* map_ptr_x_d, const float* map_ptr_y_d, float* fitting_para_d, float* CRLBs_d, float* LogLikelihood_d, float* device_debug_d)
 {
-	kernel_cuda_fitting <<<dimgrid, dimblock >>> (num_para, coef_det_d, coef_exc_d, data_d, offset_map_d, var_map_d, gain_map_d, map_ptr_x_d, map_ptr_y_d, fitting_para_d, CRLBs_d, LogLikelihood_d, device_debug_d);
+	kernel_cuda_fitting <<<dimgrid, dimblock >>> (para_config, coef_det_d, coef_exc_d, data_d, offset_map_d, var_map_d, gain_map_d, map_ptr_x_d, map_ptr_y_d, fitting_para_d, CRLBs_d, LogLikelihood_d, device_debug_d);
 }
