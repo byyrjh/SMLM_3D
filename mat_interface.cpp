@@ -16,6 +16,7 @@
 #include <string>
 #include <vector>
 
+
 using std::cout; using std::cin; using std::endl; using std::string; using std::vector;
 using std::filesystem::current_path; using std::to_string;
 extern "C"
@@ -50,18 +51,18 @@ int main()
 	float* coef_det_h = new float[spline_x * spline_y * spline_z * num_coef_per_pix];
 	float* coef_exc_h = new float[spline_z * num_coef_per_pix_axial];
 	float* data_h = new float[seg_size * seg_size * slice_num * emitter_num];
-	float* offset_map_h = new float[cam_map_size * cam_map_size];
-	float* var_map_h = new float[cam_map_size * cam_map_size];
-	float* gain_map_h = new float[cam_map_size * cam_map_size];
+	float* offset_map_h = new float[cam_map_size * cam_map_size_y];
+	float* var_map_h = new float[cam_map_size * cam_map_size_y];
+	float* gain_map_h = new float[cam_map_size * cam_map_size_y];
 	float* map_ptr_x_h = new float[emitter_num];
 	float* map_ptr_y_h = new float[emitter_num];
-	float* log_file_h = new float[emitter_num*2];
+	float* log_file_h = new float[emitter_num * 2];
 	MATFile* curent_mat;
 	mxArray* pa;
 	const char* name;
 	if (Data_type == 1)  // Experiment data
 	{
-		string cam_cali_path = cali_path+ "camera";
+		string cam_cali_path = cali_path + "camera";
 		cam_cali_path += to_string(CamIdx);
 		cam_cali_path += "_";
 		cam_cali_path += to_string(Exposuretime);
@@ -70,13 +71,13 @@ int main()
 		curent_mat = matOpen(cali_data_name, "r");
 		matGetNextVariableInfo(curent_mat, &name);
 		pa = matGetVariable(curent_mat, name);
-		memcpy(gain_map_h, (float*)mxGetData(pa), cam_map_size * cam_map_size * sizeof(float));
+		memcpy(gain_map_h, (float*)mxGetData(pa), cam_map_size * cam_map_size_y * sizeof(float));
 		matGetNextVariableInfo(curent_mat, &name);
 		pa = matGetVariable(curent_mat, name);
-		memcpy(offset_map_h, (float*)mxGetData(pa), cam_map_size * cam_map_size * sizeof(float));
+		memcpy(offset_map_h, (float*)mxGetData(pa), cam_map_size * cam_map_size_y * sizeof(float));
 		matGetNextVariableInfo(curent_mat, &name);
 		pa = matGetVariable(curent_mat, name);
-		memcpy(var_map_h, (float*)mxGetData(pa), cam_map_size * cam_map_size * sizeof(float));
+		memcpy(var_map_h, (float*)mxGetData(pa), cam_map_size * cam_map_size_y * sizeof(float));
 	}
 	else if (Data_type == 2)  // Simulation data
 	{
@@ -89,15 +90,15 @@ int main()
 		curent_mat = matOpen(offset_map_name, "r");
 		matGetNextVariableInfo(curent_mat, &name);
 		pa = matGetVariable(curent_mat, name);
-		memcpy(offset_map_h, (float*)mxGetData(pa), cam_map_size * cam_map_size * sizeof(float));
+		memcpy(offset_map_h, (float*)mxGetData(pa), cam_map_size * cam_map_size_y * sizeof(float));
 		curent_mat = matOpen(var_map_name, "r");
 		matGetNextVariableInfo(curent_mat, &name);
 		pa = matGetVariable(curent_mat, name);
-		memcpy(var_map_h, (float*)mxGetData(pa), cam_map_size * cam_map_size * sizeof(float));
+		memcpy(var_map_h, (float*)mxGetData(pa), cam_map_size * cam_map_size_y * sizeof(float));
 		curent_mat = matOpen(gain_map_name, "r");
 		matGetNextVariableInfo(curent_mat, &name);
 		pa = matGetVariable(curent_mat, name);
-		memcpy(gain_map_h, (float*)mxGetData(pa), cam_map_size * cam_map_size * sizeof(float));
+		memcpy(gain_map_h, (float*)mxGetData(pa), cam_map_size * cam_map_size_y * sizeof(float));
 	}
 	else
 	{
@@ -145,7 +146,7 @@ int main()
 	matGetNextVariableInfo(curent_mat, &name);
 	pa = matGetVariable(curent_mat, name);
 	memcpy(log_file_h, (float*)mxGetData(pa), emitter_num * 2 * sizeof(float));
-	
+
 	vector<float> emitter_m0;
 	vector<float> emitter_m1;
 	for (int i = 0; i < emitter_num; i++)
@@ -157,13 +158,13 @@ int main()
 		else
 			emitter_m1.push_back(*(log_file_h + i));
 	}
-	int calc_seg = (int)ceil(emitter_m0.back()/ calc_seg_size) * 2;
+	int calc_seg = (int)ceil(emitter_m0.back() / calc_seg_size) * 2;
 	vector<int> calc_seg_length(calc_seg);
-	for (int i = 0; i < calc_seg/2; i++)
+	for (int i = 0; i < calc_seg / 2; i++)
 	{
 		int temp_end = min(calc_seg_size * (i + 1), emitter_m0.back()) + 1;
 		int temp_length = 0;
-		while ((emitter_m0.begin() != emitter_m0.end())&& (*(emitter_m0.begin()) < temp_end))
+		while ((emitter_m0.begin() != emitter_m0.end()) && (*(emitter_m0.begin()) < temp_end))
 		{
 			temp_length++;
 			emitter_m0.erase(emitter_m0.begin());
@@ -171,17 +172,17 @@ int main()
 		calc_seg_length[i] = temp_length;
 		temp_end = min(calc_seg_size * (i + 1), emitter_m1.back()) + 1;
 		temp_length = 0;
-		while ((emitter_m1.begin() != emitter_m1.end())&& (*(emitter_m1.begin()) < temp_end))
+		while ((emitter_m1.begin() != emitter_m1.end()) && (*(emitter_m1.begin()) < temp_end))
 		{
 			temp_length++;
 			emitter_m1.erase(emitter_m1.begin());
 		}
-		calc_seg_length[i+ calc_seg / 2] = temp_length;
+		calc_seg_length[i + calc_seg / 2] = temp_length;
 	}
 
 	// data conversion law abcd(:,:,:,1)= 1 2  5 6  abcd(:,:,:,2)= 9  10   13 14
 	//                                    3 4; 7 8                 11 12 ; 15 16
-	
+
 	/*
 	TIFF* imgstack = TIFFOpen("test_sub.tif", "r");
 
@@ -228,14 +229,14 @@ int main()
 	float* CRLBs_d;     // dimension 5*1000  x y z h bg
 	float* LogLikelihood_d;  // dimension 1000  for the whole pixel
 	float* device_debug_d;
-	float* fitting_para_h = new float[emitter_num* fit_para_num];
+	float* fitting_para_h = new float[emitter_num * fit_para_num];
 	float* CRLBs_h = new float[emitter_num * fit_para_num];
 	float* LogLikelihood_h = new float[emitter_num];
-	float* device_debug_h = new float[emitter_num * 100];
+	float* device_debug_h = new float[emitter_num * iterations*2];
 	memset(fitting_para_h, 0, emitter_num * fit_para_num * sizeof(float));
 	memset(CRLBs_h, 0, emitter_num * fit_para_num * sizeof(float));
 	memset(LogLikelihood_h, 0, emitter_num * sizeof(float));
-	memset(device_debug_h, 0, emitter_num * 100 * sizeof(float));
+	memset(device_debug_h, 0, emitter_num * iterations*2 * sizeof(float));
 
 	int* para_config_h = new int[3];      // num_para(5 or 6)   initial emitter idx    number of emitters to fit
 	int* para_config_d;
@@ -243,41 +244,40 @@ int main()
 	cudaDeviceProp deviceProp;
 	cudaGetDeviceCount(&deviceCount);
 	cudaGetDeviceProperties(&deviceProp, 0);
-	const size_t availableMemory = deviceProp.totalGlobalMem/1024/1024;//unit MByte
+	const size_t availableMemory = deviceProp.totalGlobalMem / 1024 / 1024;//unit MByte
 	cudaDeviceSetCacheConfig(cudaFuncCachePreferL1);
 
 	// cuda_kernel start 
 	dim3 dimBlock = block_size;  //256 threads per block   index from 0 to 255
-	dim3 dimGrid; 
-	for (int iter = 0; iter < calc_seg; iter++)
+	dim3 dimGrid;
+	for (int iter = 0; iter < 1; iter++)//calc_seg
 	{
 		cudasafe(cudaMalloc((void**)&coef_det_d, spline_x * spline_y * spline_z * num_coef_per_pix * sizeof(float)), "Mem alloc for PSF_det failed.", __LINE__);
 		cudasafe(cudaMalloc((void**)&coef_exc_d, spline_z * num_coef_per_pix_axial * sizeof(float)), "Mem alloc for PSF_exc failed.", __LINE__);
 		cudasafe(cudaMalloc((void**)&data_d, seg_size * seg_size * slice_num * emitter_num * sizeof(float)), "Mem alloc for seg_data failed.", __LINE__);
-		cudasafe(cudaMalloc((void**)&offset_map_d, cam_map_size * cam_map_size * sizeof(float)), "Mem alloc for offset_map failed.", __LINE__);
-		cudasafe(cudaMalloc((void**)&var_map_d, cam_map_size * cam_map_size * sizeof(float)), "Mem alloc for var_map failed.", __LINE__);
-		cudasafe(cudaMalloc((void**)&gain_map_d, cam_map_size * cam_map_size * sizeof(float)), "Mem alloc for gain_map failed.", __LINE__);
+		cudasafe(cudaMalloc((void**)&offset_map_d, cam_map_size * cam_map_size_y * sizeof(float)), "Mem alloc for offset_map failed.", __LINE__);
+		cudasafe(cudaMalloc((void**)&var_map_d, cam_map_size * cam_map_size_y * sizeof(float)), "Mem alloc for var_map failed.", __LINE__);
+		cudasafe(cudaMalloc((void**)&gain_map_d, cam_map_size * cam_map_size_y * sizeof(float)), "Mem alloc for gain_map failed.", __LINE__);
 		cudasafe(cudaMalloc((void**)&map_ptr_x_d, emitter_num * sizeof(float)), "Mem alloc for LUT_x failed.", __LINE__);
 		cudasafe(cudaMalloc((void**)&map_ptr_y_d, emitter_num * sizeof(float)), "Mem alloc for LUT_y failed.", __LINE__);
 		cudasafe(cudaMalloc((void**)&fitting_para_d, fit_para_num * emitter_num * sizeof(float)), "Mem alloc for fitting_parameters failed.", __LINE__);
 		cudasafe(cudaMalloc((void**)&CRLBs_d, fit_para_num * emitter_num * sizeof(float)), "Mem alloc for CRLB failed.", __LINE__);
 		cudasafe(cudaMalloc((void**)&LogLikelihood_d, emitter_num * sizeof(float)), "Mem alloc for log_likelihood failed.", __LINE__);
-		cudasafe(cudaMalloc((void**)&device_debug_d, emitter_num * 100 * sizeof(float)), "Mem alloc for device_debug failed.", __LINE__);
+		cudasafe(cudaMalloc((void**)&device_debug_d, emitter_num * iterations*2 * sizeof(float)), "Mem alloc for device_debug failed.", __LINE__);
 		cudasafe(cudaMalloc((void**)&para_config_d, 3 * sizeof(int)), "Mem alloc for num_para failed.", __LINE__);
-		
-		cudasafe(cudaMemcpy(coef_det_d, coef_det_h, spline_x* spline_y* spline_z* num_coef_per_pix * sizeof(float), cudaMemcpyHostToDevice), "Memory for PSF_det copy failed", __LINE__);
-		cudasafe(cudaMemcpy(coef_exc_d, coef_exc_h, spline_z* num_coef_per_pix_axial * sizeof(float), cudaMemcpyHostToDevice), "Memory for PSF_exc copy failed", __LINE__);
-		cudasafe(cudaMemcpy(data_d, data_h, seg_size* seg_size* slice_num* emitter_num * sizeof(float), cudaMemcpyHostToDevice), "Memory for seg_data copy failed", __LINE__);
-		cudasafe(cudaMemcpy(offset_map_d, offset_map_h, cam_map_size* cam_map_size * sizeof(float), cudaMemcpyHostToDevice), "Memory for offset_map copy failed", __LINE__);
-		cudasafe(cudaMemcpy(var_map_d, var_map_h, cam_map_size* cam_map_size * sizeof(float), cudaMemcpyHostToDevice), "Memory for var_map copy failed", __LINE__);
-		cudasafe(cudaMemcpy(gain_map_d, gain_map_h, cam_map_size* cam_map_size * sizeof(float), cudaMemcpyHostToDevice), "Memory for gain_map copy failed", __LINE__);
+
+		cudasafe(cudaMemcpy(coef_det_d, coef_det_h, spline_x * spline_y * spline_z * num_coef_per_pix * sizeof(float), cudaMemcpyHostToDevice), "Memory for PSF_det copy failed", __LINE__);
+		cudasafe(cudaMemcpy(coef_exc_d, coef_exc_h, spline_z * num_coef_per_pix_axial * sizeof(float), cudaMemcpyHostToDevice), "Memory for PSF_exc copy failed", __LINE__);
+		cudasafe(cudaMemcpy(data_d, data_h, seg_size * seg_size * slice_num * emitter_num * sizeof(float), cudaMemcpyHostToDevice), "Memory for seg_data copy failed", __LINE__);
+		cudasafe(cudaMemcpy(offset_map_d, offset_map_h, cam_map_size * cam_map_size_y * sizeof(float), cudaMemcpyHostToDevice), "Memory for offset_map copy failed", __LINE__);
+		cudasafe(cudaMemcpy(var_map_d, var_map_h, cam_map_size * cam_map_size_y * sizeof(float), cudaMemcpyHostToDevice), "Memory for var_map copy failed", __LINE__);
+		cudasafe(cudaMemcpy(gain_map_d, gain_map_h, cam_map_size * cam_map_size_y * sizeof(float), cudaMemcpyHostToDevice), "Memory for gain_map copy failed", __LINE__);
 		cudasafe(cudaMemcpy(map_ptr_x_d, map_ptr_x_h, emitter_num * sizeof(float), cudaMemcpyHostToDevice), "Memory for LUT_x copy failed", __LINE__);
 		cudasafe(cudaMemcpy(map_ptr_y_d, map_ptr_y_h, emitter_num * sizeof(float), cudaMemcpyHostToDevice), "Memory for LUT_y copy failed", __LINE__);
-		cudasafe(cudaMemcpy(fitting_para_d, fitting_para_h, fit_para_num* emitter_num * sizeof(float), cudaMemcpyHostToDevice), "Memory for fitting_para copy failed.", __LINE__);
-		cudasafe(cudaMemcpy(CRLBs_d, CRLBs_h, fit_para_num* emitter_num * sizeof(float), cudaMemcpyHostToDevice), "Memory for CRLBs copy failed", __LINE__);
+		cudasafe(cudaMemcpy(fitting_para_d, fitting_para_h, fit_para_num * emitter_num * sizeof(float), cudaMemcpyHostToDevice), "Memory for fitting_para copy failed.", __LINE__);
+		cudasafe(cudaMemcpy(CRLBs_d, CRLBs_h, fit_para_num * emitter_num * sizeof(float), cudaMemcpyHostToDevice), "Memory for CRLBs copy failed", __LINE__);
 		cudasafe(cudaMemcpy(LogLikelihood_d, LogLikelihood_h, emitter_num * sizeof(float), cudaMemcpyHostToDevice), "Memory for LogLikelihood copy failed.", __LINE__);
-		cudasafe(cudaMemcpy(device_debug_d, device_debug_h, emitter_num * 100 * sizeof(float), cudaMemcpyHostToDevice), "Memory for device_debug copy failed.", __LINE__);
-		
+
 		int emitter_ini = 1;
 		for (int j = 0; j < iter; j++)
 			emitter_ini += calc_seg_length[j];
@@ -288,38 +288,46 @@ int main()
 		*para_config_h = fit_para_num;
 		cudasafe(cudaMemcpy(para_config_d, para_config_h, 3 * sizeof(int), cudaMemcpyHostToDevice), "Memory for num_para copy failed", __LINE__);    // LS offset estimate and initialize fitting parameter
 		cuda_fitting(dimGrid, dimBlock, para_config_d, coef_det_d, coef_exc_d, data_d, offset_map_d, var_map_d, gain_map_d, map_ptr_x_d, map_ptr_y_d, fitting_para_d, CRLBs_d, LogLikelihood_d, device_debug_d);
-		cudasafe(cudaDeviceSynchronize(), "sync failed", __LINE__);
+		cudaError_t err = cudaGetLastError();
+		printf("error status: %s\n", cudaGetErrorString(err));
+		err=cudaDeviceSynchronize();
+		printf("error status: %s\n", cudaGetErrorString(err));
 		*para_config_h = fit_para_num - 1;
-		cudasafe(cudaMemcpy(para_config_d, para_config_h, 3*sizeof(int), cudaMemcpyHostToDevice), "Memory for num_para copy failed", __LINE__);
-		cudasafe(cudaMemcpy(device_debug_d, device_debug_h, emitter_num * 100 * sizeof(float), cudaMemcpyHostToDevice), "Memory for num_para device_debug failed.", __LINE__);   // fine localization
+		cudasafe(cudaMemcpy(para_config_d, para_config_h, 3 * sizeof(int), cudaMemcpyHostToDevice), "Memory for num_para copy failed", __LINE__);
+		cudasafe(cudaMemcpy(device_debug_d, device_debug_h, emitter_num * iterations*2 * sizeof(float), cudaMemcpyHostToDevice), "Memory for num_para device_debug failed.", __LINE__);   // fine localization
 		cuda_fitting(dimGrid, dimBlock, para_config_d, coef_det_d, coef_exc_d, data_d, offset_map_d, var_map_d, gain_map_d, map_ptr_x_d, map_ptr_y_d, fitting_para_d, CRLBs_d, LogLikelihood_d, device_debug_d);
-		cudasafe(cudaDeviceSynchronize(), "sync failed", __LINE__);
+		err=cudaDeviceSynchronize();
+		printf("error status: %s\n", cudaGetErrorString(err));
 		cudasafe(cudaMemcpy(fitting_para_h, fitting_para_d, fit_para_num * emitter_num * sizeof(float), cudaMemcpyDeviceToHost), "cudaMemcpy failed for fitting_parameters.", __LINE__);
 		cudasafe(cudaMemcpy(CRLBs_h, CRLBs_d, fit_para_num * emitter_num * sizeof(float), cudaMemcpyDeviceToHost), "cudaMemcpy failed for CRLB.", __LINE__);
 		cudasafe(cudaMemcpy(LogLikelihood_h, LogLikelihood_d, emitter_num * sizeof(float), cudaMemcpyDeviceToHost), "cudaMemcpy failed for log_likelihood.", __LINE__);
-		cudasafe(cudaMemcpy(device_debug_h, device_debug_d, emitter_num * 100 * sizeof(float), cudaMemcpyDeviceToHost), "cudaMemcpy failed for device_debug.", __LINE__);
+		cudasafe(cudaMemcpy(device_debug_h, device_debug_d, emitter_num * iterations*2 * sizeof(float), cudaMemcpyDeviceToHost), "cudaMemcpy failed for device_debug.", __LINE__);
 		cudasafe(cudaDeviceReset(), "sync failed", __LINE__);
-		printf("hello world%d\n",iter);
+		printf("segment set %d fitting finished, %d segment sets left\n", iter+1, calc_seg-iter-1);
 	}
-	printf("hello world\n");
-		// cuda_kernel end
+	// cuda_kernel end
 
+	/*
 	for (int i = 0; i < 10; i++)
 	{
-		printf("x_ini=%f,x_end=%f, y_ini=%f,y_end=%f, z_ini=%f,z_end=%f, h_ini=%f,h_end=%f, bg_ini=%f,bg_end=%f, current emitter idx=%d\n", *(CRLBs_h + i * 5), *(fitting_para_h + i * 5), *(CRLBs_h + i * 5 + 1), *(fitting_para_h + i * 5 + 1), *(CRLBs_h + i * 5 + 2), *(fitting_para_h + i * 5 + 2), *(CRLBs_h + i * 5 + 3), *(fitting_para_h + i * 5 + 3) ,*(CRLBs_h + i * 5 + 4), *(fitting_para_h + i * 5 + 4), i + 1);
+		printf("x_ini=%f,x_end=%f, y_ini=%f,y_end=%f, z_ini=%f,z_end=%f, h_ini=%f,h_end=%f, bg_ini=%f,bg_end=%f, current emitter idx=%d\n", *(CRLBs_h + i * 5), *(fitting_para_h + i * 5), *(CRLBs_h + i * 5 + 1), *(fitting_para_h + i * 5 + 1), *(CRLBs_h + i * 5 + 2), *(fitting_para_h + i * 5 + 2), *(CRLBs_h + i * 5 + 3), *(fitting_para_h + i * 5 + 3), *(CRLBs_h + i * 5 + 4), *(fitting_para_h + i * 5 + 4), i + 1);
 	}
-	
+	*/
 	// .mat output
 	double* fitting_para_crlb = new double[emitter_num * fit_para_num];
 	double* fitting_para_end = new double[emitter_num * fit_para_num];
 	double* fitting_para_ChiSq = new double[emitter_num];
-	double* device_debug_out = new double[100 * emitter_num];
+	double* device_debug_out = new double[iterations*2 * emitter_num];
+	memset(fitting_para_crlb, 0, emitter_num * fit_para_num * sizeof(double));
+	memset(fitting_para_end, 0, emitter_num * fit_para_num * sizeof(double));
+	memset(fitting_para_ChiSq, 0, emitter_num * sizeof(double));
+	memset(device_debug_out, 0, iterations * 2 * emitter_num * sizeof(double));
 	for (int i = 0; i < emitter_num; i++)
 	{
 		*(fitting_para_ChiSq + i) = (double)*(LogLikelihood_h + i);
-		for (int j = 0; j < 100; j++)
+		for (int j = 0; j < iterations*2; j++)
 		{
-			*(device_debug_out + i * 100 + j) = (double)*(device_debug_h + i * 100 + j);
+			*(device_debug_out + i * iterations*2 + j) = (double)*(device_debug_h + i * iterations*2 + j);
 		}
 	}
 	for (int i = 0; i < emitter_num * fit_para_num; i++)
@@ -340,7 +348,7 @@ int main()
 
 	pmat = matOpen(file_crlb, "w");
 	pa1 = mxCreateDoubleMatrix(fit_para_num, emitter_num, mxREAL);
-	memcpy((void*)(mxGetPr(pa1)), (void*)fitting_para_crlb, fit_para_num * emitter_num *sizeof(double));
+	memcpy((void*)(mxGetPr(pa1)), (void*)fitting_para_crlb, fit_para_num * emitter_num * sizeof(double));
 	matPutVariable(pmat, "crlb_results", pa1);
 	mxDestroyArray(pa1);
 	matClose(pmat);
@@ -360,12 +368,12 @@ int main()
 	matClose(pmat);
 
 	pmat = matOpen(device_debug_out_char, "w");
-	pa1 = mxCreateDoubleMatrix(100, emitter_num, mxREAL);
-	memcpy((void*)(mxGetPr(pa1)), (void*)device_debug_out, emitter_num * 100 * sizeof(double));
+	pa1 = mxCreateDoubleMatrix(iterations*2, emitter_num, mxREAL);
+	memcpy((void*)(mxGetPr(pa1)), (void*)device_debug_out, emitter_num * iterations*2 * sizeof(double));
 	matPutVariable(pmat, "test", pa1);
 	mxDestroyArray(pa1);
 	matClose(pmat);
-	
+
 	delete[] fitting_para_crlb, fitting_para_end, fitting_para_ChiSq, device_debug_out;
 	// .mat output end
 	delete[] coef_det_h, coef_exc_h, data_h, offset_map_h, var_map_h, gain_map_h, map_ptr_x_h, map_ptr_y_h, para_config_h;

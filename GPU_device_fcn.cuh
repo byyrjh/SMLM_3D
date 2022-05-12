@@ -74,7 +74,7 @@ __device__ inline void kernel_h_bg_init(const float* data_cur, const float* offs
 
 __device__ inline void kernel_xy_init(const float* data_cur, const float* offset_map, const float* gain_map, const float* pos_x, const float* pos_y, float* NewTheta)
 {
-	
+
 	float* tmpx = new float[1];
 	float* tmpy = new float[1];
 	float* tmpz = new float[1];
@@ -85,7 +85,7 @@ __device__ inline void kernel_xy_init(const float* data_cur, const float* offset
 	*tmpsum = 0;
 	const float bg = *(NewTheta + 4);
 
-	
+
 	for (int kk = 0; kk < slice_num; kk++)
 	{
 		for (int ii = 0; ii < seg_size; ii++) for (int jj = 0; jj < seg_size; jj++) // jj is inner loop
@@ -96,25 +96,25 @@ __device__ inline void kernel_xy_init(const float* data_cur, const float* offset
 			int cur_idx = (static_cast<int>(*pos_y) - ((seg_size - 1) / 2 + 1) + (i + 1 - rem_idx) / seg_size) * cam_map_size + static_cast<int>(*pos_x) - ((seg_size - 1) / 2 + 1) + rem_idx - 1;
 			float cur_offset = *(offset_map + cur_idx);   //calculate map index
 			float cur_gain = *(gain_map + cur_idx);
-			*tmpy += fmaxf((data_cur[kk * seg_size * seg_size + seg_size * ii + jj] - cur_offset) / cur_gain - bg,0) * (ii + 1);
+			*tmpy += fmaxf((data_cur[kk * seg_size * seg_size + seg_size * ii + jj] - cur_offset) / cur_gain - bg, 0) * (ii + 1);
 			*tmpx += fmaxf((data_cur[kk * seg_size * seg_size + seg_size * ii + jj] - cur_offset) / cur_gain - bg, 0) * (jj + 1);
 			*tmpsum += fmaxf((data_cur[kk * seg_size * seg_size + seg_size * ii + jj] - cur_offset) / cur_gain - bg, 0);
 		}
 	}
-		
+
 	if (abs(*tmpx / *tmpsum - ((seg_size - 1) / 2 + 1)) <= init_esti_xy)
 		*NewTheta = *tmpx / *tmpsum - ((seg_size - 1) / 2 + 1);
 	else
 		*NewTheta = 0;
 	if (abs(*tmpy / *tmpsum - ((seg_size - 1) / 2 + 1)) <= init_esti_xy)
-		*(NewTheta+1) = *tmpy / *tmpsum - ((seg_size - 1) / 2 + 1);
+		*(NewTheta + 1) = *tmpy / *tmpsum - ((seg_size - 1) / 2 + 1);
 	else
-		*(NewTheta+1) = 0;
+		*(NewTheta + 1) = 0;
 
 	delete[] tmpx;
 	delete[] tmpy;
 	delete[] tmpz;
-	delete[] tmpsum; 
+	delete[] tmpsum;
 }
 
 __device__ inline void kernel_z_init(const float* data_cur, const float* offset_map, const float* gain_map, const float* pos_x, const float* pos_y, float* NewTheta, const float* lat_inten_cali_d)
@@ -122,7 +122,7 @@ __device__ inline void kernel_z_init(const float* data_cur, const float* offset_
 	float x_pos = *NewTheta;//jj
 	float y_pos = *(NewTheta + 1);//ii
 	float z_pos = 0;
-	for (int kk = 0; kk < (slice_num - 1) / 2; kk++) 
+	for (int kk = 0; kk < (slice_num - 1) / 2; kk++)
 	{
 		float upper_mo = 0;
 		float lower_mo = 0;
@@ -135,25 +135,25 @@ __device__ inline void kernel_z_init(const float* data_cur, const float* offset_
 			int cur_idx = (static_cast<int>(*pos_y) - ((seg_size - 1) / 2 + 1) + (i + 1 - rem_idx) / seg_size) * cam_map_size + static_cast<int>(*pos_x) - ((seg_size - 1) / 2 + 1) + rem_idx - 1;
 			float cur_offset = *(offset_map + cur_idx);   //calculate map index
 			float cur_gain = *(gain_map + cur_idx);
-			upper_mo += fmaxf((data_cur[kk * seg_size * seg_size + seg_size * ii + jj] - cur_offset) / cur_gain - bg, 0) ;
-			lower_mo += fmaxf((data_cur[(slice_num - 1 - kk) * seg_size * seg_size + seg_size * ii + jj] - cur_offset) / cur_gain - bg, 0) ;
+			upper_mo += fmaxf((data_cur[kk * seg_size * seg_size + seg_size * ii + jj] - cur_offset) / cur_gain - bg, 0);
+			lower_mo += fmaxf((data_cur[(slice_num - 1 - kk) * seg_size * seg_size + seg_size * ii + jj] - cur_offset) / cur_gain - bg, 0);
 		}
 		float err_sq = 10;
 		int z_id = 0;
 		for (int i = 0; i < LS_stepsize / step_size; i++)
 		{
-			if ((*(lat_inten_cali_d + i+kk* LS_stepsize / step_size) - upper_mo / lower_mo) * (*(lat_inten_cali_d + i+kk * LS_stepsize / step_size) - upper_mo / lower_mo) < err_sq)
+			if ((*(lat_inten_cali_d + i + kk * LS_stepsize / step_size) - upper_mo / lower_mo) * (*(lat_inten_cali_d + i + kk * LS_stepsize / step_size) - upper_mo / lower_mo) < err_sq)
 			{
 				z_id = i;
 				err_sq = (*(lat_inten_cali_d + i + kk * LS_stepsize / step_size) - upper_mo / lower_mo) * (*(lat_inten_cali_d + i + kk * LS_stepsize / step_size) - upper_mo / lower_mo);
 			}
 		}
-		z_pos += (LS_stepsize / step_size/2 - z_id )/ ((slice_num - 1) / 2);
+		z_pos += (LS_stepsize / step_size / 2 - z_id) / ((slice_num - 1) / 2);
 	}
 	*(NewTheta + 2) = z_pos;
 }
 
-__device__ inline void kernel_computeDelta3D_det(float x_delta, float y_delta, float z_delta, float* delta_f, float* delta_dxf, float* delta_dyf, float* delta_dzf) 
+__device__ inline void kernel_computeDelta3D_det(float x_delta, float y_delta, float z_delta, float* delta_f, float* delta_dxf, float* delta_dyf, float* delta_dzf)
 {
 
 	int i, j, k;
@@ -206,7 +206,7 @@ __device__ inline void kernel_DerivativeSpline(bool offset_fit, int* x_spl, int*
 	if (offset_fit)
 		memset(dudt, 0, fit_para_num * sizeof(float));
 	else
-		memset(dudt, 0, (fit_para_num-1) * sizeof(float));
+		memset(dudt, 0, (fit_para_num - 1) * sizeof(float));
 	for (int i = 0; i < 64; i++) {
 		temp += delta_f[i] * coef_det_d[i * (spline_x * spline_y * spline_z) + (*z_spl) * (spline_x * spline_y) + (*y_spl) * spline_y + *x_spl];
 		dudt[0] += delta_dxf[i] * coef_det_d[i * (spline_x * spline_y * spline_z) + (*z_spl) * (spline_x * spline_y) + (*y_spl) * spline_y + *x_spl];
@@ -252,7 +252,7 @@ __device__ inline int kernel_cholesky(float* A, int n, float* L, float* U) //The
 	return info;
 }
 
-__device__ inline void kernel_luEvaluate(float* L, float* U, float* b, const int n, float* x) 
+__device__ inline void kernel_luEvaluate(float* L, float* U, float* b, const int n, float* x)
 {
 	//Ax = b -> LUx = b. Then y is defined to be Ux
 	//for sigmaxy, we have 6 parameters
@@ -281,7 +281,7 @@ __device__ inline void kernel_luEvaluate(float* L, float* U, float* b, const int
 	delete[] y;
 }
 
-__device__ inline void kernel_MatInvN(float* M, float* Minv, float* DiagMinv, int sz) 
+__device__ inline void kernel_MatInvN(float* M, float* Minv, float* DiagMinv, int sz)
 {
 	/*!
 	 * \brief nxn partial matrix inversion
