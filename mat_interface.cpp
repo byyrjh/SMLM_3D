@@ -250,7 +250,7 @@ int main()
 	// cuda_kernel start 
 	dim3 dimBlock = block_size;  //256 threads per block   index from 0 to 255
 	dim3 dimGrid;
-	for (int iter = 0; iter < 1; iter++)//calc_seg
+	for (int iter = 0; iter < calc_seg; iter++)//calc_seg
 	{
 		cudasafe(cudaMalloc((void**)&coef_det_d, spline_x * spline_y * spline_z * num_coef_per_pix * sizeof(float)), "Mem alloc for PSF_det failed.", __LINE__);
 		cudasafe(cudaMalloc((void**)&coef_exc_d, spline_z * num_coef_per_pix_axial * sizeof(float)), "Mem alloc for PSF_exc failed.", __LINE__);
