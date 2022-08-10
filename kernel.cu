@@ -5,21 +5,18 @@
 #include "para_config.h"
 #include <time.h>
 #include <math.h>
+#include <cmath>
 
 
 __global__ void kernel_cuda_fitting(const int* para_config, const float* coef_det_d, const float* coef_exc_d, const float* data_d, const float* offset_map_d, const float* var_map_d,
 	const float* gain_map_d, const float* map_ptr_x_d, const float* map_ptr_y_d, float* fitting_para_d, float* CRLBs_d, float* LogLikelihood_d, float* device_debug_d)
 {
-	int tx = threadIdx.x;
-	int bx = blockIdx.x;
-	int idx = bx * block_size + tx + *(para_config + 1) - 1;
-	int num_para[1] = { 0 };
-	*num_para = *para_config;
-	if ((bx * block_size + tx) >= *(para_config + 2)) return;
-	if ((bx * block_size + tx) < *(para_config + 2))
-	//if ((bx * block_size + tx) < 10)
+	const int idx = (blockIdx.x) * block_size + threadIdx.x;
+	const int* num_para = para_config;
+	if (idx >= *(para_config + 1)) return;
+	if (idx < *(para_config + 1))
+	//if (idx==11)
 	{
-		
 		float offset_global = 0;
 		bool offset_fit;
 		if (*num_para == 6)             // config   num_para(5 or 6)   initial emitter idx    number of emitters to fit
@@ -30,7 +27,6 @@ __global__ void kernel_cuda_fitting(const int* para_config, const float* coef_de
 		float OldTheta[fit_para_num];//            x y z h bg z_offset
 		const float pos_x = *(map_ptr_x_d + idx);
 		const float pos_y = *(map_ptr_y_d + idx);
-		
 		const float* data_cur = data_d + idx * seg_size * seg_size * slice_num;
 		float xc_int, yc_int, zc_int, xc_frac, yc_frac, zc_frac;
 		float z_exc_int, z_exc_frac;
@@ -68,7 +64,9 @@ __global__ void kernel_cuda_fitting(const int* para_config, const float* coef_de
 			*(NewUpdate + i) = 1e11;
 			*(OldUpdate + i) = 1e11;
 		}
+		
 		float NewLambda = INIT_LAMBDA, OldLambda = INIT_LAMBDA, mu;
+		
 		float* L = new float[(*num_para) * (*num_para)];
 		float* U = new float[(*num_para) * (*num_para)];
 		float* M = new float[(*num_para) * (*num_para)];
@@ -76,6 +74,9 @@ __global__ void kernel_cuda_fitting(const int* para_config, const float* coef_de
 		float* Diag = new float[(*num_para)];
 		memset(L, 0, (*num_para) * (*num_para) * sizeof(float));
 		memset(U, 0, (*num_para) * (*num_para) * sizeof(float));
+		//delete[] L, U, M, Minv, Diag;
+		
+		
 		if (offset_fit)
 		{
 			kernel_bg_eval(data_cur, offset_map_d, gain_map_d, &pos_x, &pos_y, NewTheta);
@@ -86,12 +87,27 @@ __global__ void kernel_cuda_fitting(const int* para_config, const float* coef_de
 		}
 		else
 		{
-			for (int i = 0; i < *(para_config + 2); i++) offset_global += (*(fitting_para_d + (*(para_config + 1) - 1) * fit_para_num + i * fit_para_num + 5)) / (*(para_config + 2));
-			for (int i = 0; i < 5; i++) NewTheta[i] = *(fitting_para_d + idx * fit_para_num + i);
-			NewTheta[5] = offset_global;
+			float counter = 0;
+			for (int i = 0; i < *(para_config + 1); i++)
+			{
+				if (!isnan(*(fitting_para_d + i * fit_para_num + 5)))
+				{
+					offset_global += *(fitting_para_d + i * fit_para_num + 5);
+					++counter;
+				}
+			}
+			offset_global /= counter;
+			for (int i = 0; i < 5; i++)
+				if (!isnan(*(fitting_para_d + idx * fit_para_num + i)))
+					NewTheta[i] = *(fitting_para_d + idx * fit_para_num + i);
+				else
+					NewTheta[i] = 0;
+			//NewTheta[5] = offset_global;
+			NewTheta[5] = 5;
 		}
+		
 		//kernel_z_init(data_cur, offset_map_d, gain_map_d, &pos_x, &pos_y, NewTheta, lat_inten_cali_d);
-
+		
 		for (int ii = 0; ii < *num_para; ii++) OldTheta[ii] = NewTheta[ii];
 		xc_int = floor(-NewTheta[0]);
 		xc_frac = -NewTheta[0] - xc_int;            // units of xc_int yc_int zc_int z_exc_int are PSF template pixel(lateral) and step(axial) 
@@ -104,6 +120,8 @@ __global__ void kernel_cuda_fitting(const int* para_config, const float* coef_de
 		z_exc_frac = -NewTheta[2] - NewTheta[5] - z_exc_int;
 		kernel_computeDelta3D_exc(z_exc_frac, delta_g, delta_dzg);
 
+		
+		
 		for (int kk = 0; kk < slice_num; kk++)for (int ii = 0; ii < seg_size; ii++) for (int jj = 0; jj < seg_size; jj++)
 		{  // calculate for each pixel. initialize alpha beta and ChiSq
 			int i = jj + ii * seg_size;
@@ -141,7 +159,7 @@ __global__ void kernel_cuda_fitting(const int* para_config, const float* coef_de
 			}
 		}  //end to alpha beta and ChiSq initialization
 		
-
+		
 		
 		//********************** main iterative loop ****************************
 		int pix_count = 0;
@@ -261,6 +279,7 @@ __global__ void kernel_cuda_fitting(const int* para_config, const float* coef_de
 				//printf("Derivative x is %f, y is %f, z is %f, h is %f, bg is %f\n", NewDudt[0], NewDudt[1], NewDudt[2], NewDudt[3], NewDudt[4]);
 				*(device_debug_d + idx * iterations * 2 + iter) = NewChiSq;
 				*(device_debug_d + idx * iterations * 2 + iter + iterations) = NewDudt[2];
+				//printf("current dudt2 is %f\n", NewDudt[2]);
 			}
 		}  //end to iteration loop
 		
@@ -308,12 +327,16 @@ __global__ void kernel_cuda_fitting(const int* para_config, const float* coef_de
 		}
 		*(LogLikelihood_d + idx) = ChiSq_min;
 		kernel_MatInvN(M, Minv, Diag, (*num_para));
-		for (int i = 0; i < (*num_para); i++)
+		//if (offset_fit)
 		{
-			*(fitting_para_d + idx * fit_para_num + i) = NewTheta[i];
-			*(CRLBs_d + idx * fit_para_num + i) = Diag[i];
-			//printf("CRLBs ");
+			for (int i = 0; i < (*num_para); i++)
+			{
+				*(fitting_para_d + idx * fit_para_num + i) = NewTheta[i];
+				*(CRLBs_d + idx * fit_para_num + i) = Diag[i];
+			}
 		}
+		
+		
 		delete[] NewDudt, M, Minv, Diag;
 		return;
 		

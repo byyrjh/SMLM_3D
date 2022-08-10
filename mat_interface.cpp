@@ -44,8 +44,10 @@ void cudasafe(cudaError_t err, char* str, int lineNumber)
 
 int main()
 {
-	string Cur_dir = current_path().parent_path().string();
-	string data_path = Cur_dir + "\\segment_data\\";
+	//string Cur_dir = current_path().parent_path().string();
+	string Cur_dir = "M:\\Hao\\2022_7_15\\fixed_Hela_CLC-mEos\\fov2\\localization";
+	string suffix = "PSFdata3.mat";
+	//string data_path = Cur_dir + "\\segment_data\\";
 	string cali_path = Cur_dir + "\\setup_calibration\\";
 	string seg_data_path = Cur_dir + "\\segment_data\\";
 	float* coef_det_h = new float[spline_x * spline_y * spline_z * num_coef_per_pix];
@@ -104,12 +106,16 @@ int main()
 	{
 		return 0;
 	}
-	string coef_mx_name_det_str = seg_data_path + "coeff_det_exper.mat";
-	string coef_mx_name_exc_str = seg_data_path + "coeff_exc_exper.mat";
-	string data_mx_name_str = seg_data_path + "seg_data.mat";
-	string map_ptr_x_name_str = seg_data_path + "map_ptr_x.mat";
-	string map_ptr_y_name_str = seg_data_path + "map_ptr_y.mat";
-	string log_file_name_str = seg_data_path + "log_file.mat";
+	string coef_mx_name_det_str = cali_path + "coeff_det_exper.mat";
+	string coef_mx_name_exc_str = cali_path + "coeff_exc_exper.mat";
+	string data_mx_name_str = seg_data_path + "seg_data";
+	data_mx_name_str += suffix;
+	string map_ptr_x_name_str = seg_data_path + "map_ptr_x";
+	map_ptr_x_name_str += suffix;
+	string map_ptr_y_name_str = seg_data_path + "map_ptr_y";
+	map_ptr_y_name_str += suffix;
+	string log_file_name_str = seg_data_path + "log_file";
+	log_file_name_str += suffix;
 	const char* coef_mx_name_det = coef_mx_name_det_str.c_str();
 	const char* coef_mx_name_exc = coef_mx_name_exc_str.c_str();
 	const char* data_mx_name = data_mx_name_str.c_str();
@@ -160,6 +166,7 @@ int main()
 	}
 	int calc_seg = (int)ceil(emitter_m0.back() / calc_seg_size) * 2;
 	vector<int> calc_seg_length(calc_seg);
+	int calc_seg_mem_size = 0;
 	for (int i = 0; i < calc_seg / 2; i++)
 	{
 		int temp_end = min(calc_seg_size * (i + 1), emitter_m0.back()) + 1;
@@ -170,6 +177,7 @@ int main()
 			emitter_m0.erase(emitter_m0.begin());
 		}
 		calc_seg_length[i] = temp_length;
+		calc_seg_mem_size = max(calc_seg_mem_size, temp_length);
 		temp_end = min(calc_seg_size * (i + 1), emitter_m1.back()) + 1;
 		temp_length = 0;
 		while ((emitter_m1.begin() != emitter_m1.end()) && (*(emitter_m1.begin()) < temp_end))
@@ -178,6 +186,7 @@ int main()
 			emitter_m1.erase(emitter_m1.begin());
 		}
 		calc_seg_length[i + calc_seg / 2] = temp_length;
+		calc_seg_mem_size = max(calc_seg_mem_size, temp_length);
 	}
 
 	// data conversion law abcd(:,:,:,1)= 1 2  5 6  abcd(:,:,:,2)= 9  10   13 14
@@ -215,7 +224,6 @@ int main()
 		delete[] rowdata;
 	}
 	*/
-
 	float* coef_det_d;
 	float* coef_exc_d;
 	float* data_d;
@@ -232,13 +240,13 @@ int main()
 	float* fitting_para_h = new float[emitter_num * fit_para_num];
 	float* CRLBs_h = new float[emitter_num * fit_para_num];
 	float* LogLikelihood_h = new float[emitter_num];
-	float* device_debug_h = new float[emitter_num * iterations*2];
+	float* device_debug_h = new float[emitter_num * iterations * 2];
 	memset(fitting_para_h, 0, emitter_num * fit_para_num * sizeof(float));
 	memset(CRLBs_h, 0, emitter_num * fit_para_num * sizeof(float));
 	memset(LogLikelihood_h, 0, emitter_num * sizeof(float));
 	memset(device_debug_h, 0, emitter_num * iterations*2 * sizeof(float));
 
-	int* para_config_h = new int[3];      // num_para(5 or 6)   initial emitter idx    number of emitters to fit
+	int* para_config_h = new int[2];      // num_para(5 or 6)     number of emitters to fit
 	int* para_config_d;
 	int deviceCount = 0;
 	cudaDeviceProp deviceProp;
@@ -248,72 +256,95 @@ int main()
 	cudaDeviceSetCacheConfig(cudaFuncCachePreferL1);
 
 	// cuda_kernel start 
+	// trial 1            free and reallocate memory 
+	//                    do not reset device
+	//    error
+
 	dim3 dimBlock = block_size;  //256 threads per block   index from 0 to 255
 	dim3 dimGrid;
-	for (int iter = 0; iter < calc_seg; iter++)//calc_seg
+	cudaError_t err;
+	size_t free_byte;
+	size_t total_byte;
+	float used_mem;
+	
+	for (int iter = 0; iter < calc_seg; iter++)//calc_seg  maximum throughput 2900+ emitters*2 
 	{
-		cudasafe(cudaMalloc((void**)&coef_det_d, spline_x * spline_y * spline_z * num_coef_per_pix * sizeof(float)), "Mem alloc for PSF_det failed.", __LINE__);
-		cudasafe(cudaMalloc((void**)&coef_exc_d, spline_z * num_coef_per_pix_axial * sizeof(float)), "Mem alloc for PSF_exc failed.", __LINE__);
-		cudasafe(cudaMalloc((void**)&data_d, seg_size * seg_size * slice_num * emitter_num * sizeof(float)), "Mem alloc for seg_data failed.", __LINE__);
-		cudasafe(cudaMalloc((void**)&offset_map_d, cam_map_size * cam_map_size_y * sizeof(float)), "Mem alloc for offset_map failed.", __LINE__);
-		cudasafe(cudaMalloc((void**)&var_map_d, cam_map_size * cam_map_size_y * sizeof(float)), "Mem alloc for var_map failed.", __LINE__);
-		cudasafe(cudaMalloc((void**)&gain_map_d, cam_map_size * cam_map_size_y * sizeof(float)), "Mem alloc for gain_map failed.", __LINE__);
-		cudasafe(cudaMalloc((void**)&map_ptr_x_d, emitter_num * sizeof(float)), "Mem alloc for LUT_x failed.", __LINE__);
-		cudasafe(cudaMalloc((void**)&map_ptr_y_d, emitter_num * sizeof(float)), "Mem alloc for LUT_y failed.", __LINE__);
-		cudasafe(cudaMalloc((void**)&fitting_para_d, fit_para_num * emitter_num * sizeof(float)), "Mem alloc for fitting_parameters failed.", __LINE__);
-		cudasafe(cudaMalloc((void**)&CRLBs_d, fit_para_num * emitter_num * sizeof(float)), "Mem alloc for CRLB failed.", __LINE__);
-		cudasafe(cudaMalloc((void**)&LogLikelihood_d, emitter_num * sizeof(float)), "Mem alloc for log_likelihood failed.", __LINE__);
-		cudasafe(cudaMalloc((void**)&device_debug_d, emitter_num * iterations*2 * sizeof(float)), "Mem alloc for device_debug failed.", __LINE__);
-		cudasafe(cudaMalloc((void**)&para_config_d, 3 * sizeof(int)), "Mem alloc for num_para failed.", __LINE__);
-
-		cudasafe(cudaMemcpy(coef_det_d, coef_det_h, spline_x * spline_y * spline_z * num_coef_per_pix * sizeof(float), cudaMemcpyHostToDevice), "Memory for PSF_det copy failed", __LINE__);
-		cudasafe(cudaMemcpy(coef_exc_d, coef_exc_h, spline_z * num_coef_per_pix_axial * sizeof(float), cudaMemcpyHostToDevice), "Memory for PSF_exc copy failed", __LINE__);
-		cudasafe(cudaMemcpy(data_d, data_h, seg_size * seg_size * slice_num * emitter_num * sizeof(float), cudaMemcpyHostToDevice), "Memory for seg_data copy failed", __LINE__);
-		cudasafe(cudaMemcpy(offset_map_d, offset_map_h, cam_map_size * cam_map_size_y * sizeof(float), cudaMemcpyHostToDevice), "Memory for offset_map copy failed", __LINE__);
-		cudasafe(cudaMemcpy(var_map_d, var_map_h, cam_map_size * cam_map_size_y * sizeof(float), cudaMemcpyHostToDevice), "Memory for var_map copy failed", __LINE__);
-		cudasafe(cudaMemcpy(gain_map_d, gain_map_h, cam_map_size * cam_map_size_y * sizeof(float), cudaMemcpyHostToDevice), "Memory for gain_map copy failed", __LINE__);
-		cudasafe(cudaMemcpy(map_ptr_x_d, map_ptr_x_h, emitter_num * sizeof(float), cudaMemcpyHostToDevice), "Memory for LUT_x copy failed", __LINE__);
-		cudasafe(cudaMemcpy(map_ptr_y_d, map_ptr_y_h, emitter_num * sizeof(float), cudaMemcpyHostToDevice), "Memory for LUT_y copy failed", __LINE__);
-		cudasafe(cudaMemcpy(fitting_para_d, fitting_para_h, fit_para_num * emitter_num * sizeof(float), cudaMemcpyHostToDevice), "Memory for fitting_para copy failed.", __LINE__);
-		cudasafe(cudaMemcpy(CRLBs_d, CRLBs_h, fit_para_num * emitter_num * sizeof(float), cudaMemcpyHostToDevice), "Memory for CRLBs copy failed", __LINE__);
-		cudasafe(cudaMemcpy(LogLikelihood_d, LogLikelihood_h, emitter_num * sizeof(float), cudaMemcpyHostToDevice), "Memory for LogLikelihood copy failed.", __LINE__);
-
-		int emitter_ini = 1;
+		//if (iter == 0) continue;
+		//if (iter == 70) continue;
+		// global const in
+		cudaMalloc((void**)&coef_det_d, spline_x* spline_y* spline_z* num_coef_per_pix * sizeof(float));
+		cudaMalloc((void**)&coef_exc_d, spline_z* num_coef_per_pix_axial * sizeof(float));
+		cudaMalloc((void**)&offset_map_d, cam_map_size* cam_map_size_y * sizeof(float));
+		cudaMalloc((void**)&var_map_d, cam_map_size* cam_map_size_y * sizeof(float));
+		cudaMalloc((void**)&gain_map_d, cam_map_size* cam_map_size_y * sizeof(float));
+		cudaMemcpy(coef_det_d, coef_det_h, spline_x* spline_y* spline_z* num_coef_per_pix * sizeof(float), cudaMemcpyHostToDevice);
+		cudaMemcpy(coef_exc_d, coef_exc_h, spline_z* num_coef_per_pix_axial * sizeof(float), cudaMemcpyHostToDevice);
+		cudaMemcpy(offset_map_d, offset_map_h, cam_map_size* cam_map_size_y * sizeof(float), cudaMemcpyHostToDevice);
+		cudaMemcpy(var_map_d, var_map_h, cam_map_size* cam_map_size_y * sizeof(float), cudaMemcpyHostToDevice);
+		cudaMemcpy(gain_map_d, gain_map_h, cam_map_size* cam_map_size_y * sizeof(float), cudaMemcpyHostToDevice);
+		// global argument in
+		cudaMalloc((void**)&data_d, seg_size* seg_size* slice_num* calc_seg_mem_size * sizeof(float));
+		cudaMalloc((void**)&map_ptr_x_d, calc_seg_mem_size * sizeof(float));
+		cudaMalloc((void**)&map_ptr_y_d, calc_seg_mem_size * sizeof(float));
+		cudaMalloc((void**)&para_config_d, 2 * sizeof(int));
+		cudaMemset(data_d, 0, seg_size* seg_size* slice_num* calc_seg_mem_size * sizeof(float));
+		cudaMemset(map_ptr_x_d, 0, calc_seg_mem_size * sizeof(float));
+		cudaMemset(map_ptr_y_d, 0, calc_seg_mem_size * sizeof(float));
+		cudaMemset(para_config_d, 0, 2 * sizeof(int));
+		// global argument out
+		cudaMalloc((void**)&fitting_para_d, fit_para_num* calc_seg_mem_size * sizeof(float));   // if I can only allocate memory without initialization???
+		cudaMalloc((void**)&CRLBs_d, fit_para_num* calc_seg_mem_size * sizeof(float));
+		cudaMalloc((void**)&LogLikelihood_d, calc_seg_mem_size * sizeof(float));
+		cudaMalloc((void**)&device_debug_d, calc_seg_mem_size* iterations * 2 * sizeof(float));
+		cudaMemset(fitting_para_d, 0, fit_para_num* calc_seg_mem_size * sizeof(float));
+		cudaMemset(CRLBs_d, 0, fit_para_num* calc_seg_mem_size * sizeof(float));
+		cudaMemset(LogLikelihood_d, 0, calc_seg_mem_size * sizeof(float));
+		cudaMemset(device_debug_d, 0, calc_seg_mem_size* iterations * 2 * sizeof(float));
+		
+		int emitter_ini = 0;
 		for (int j = 0; j < iter; j++)
 			emitter_ini += calc_seg_length[j];
 		int cur_seg_size = calc_seg_length[iter];
-		*(para_config_h + 1) = emitter_ini;
-		*(para_config_h + 2) = cur_seg_size;
 		dimGrid = ceil((float)cur_seg_size / (float)block_size);
 		*para_config_h = fit_para_num;
-		cudasafe(cudaMemcpy(para_config_d, para_config_h, 3 * sizeof(int), cudaMemcpyHostToDevice), "Memory for num_para copy failed", __LINE__);    // LS offset estimate and initialize fitting parameter
+		*(para_config_h + 1) = cur_seg_size;
+		//printf("current parameter number is %d, current number of emitters is %d\n", *para_config_h, *(para_config_h + 1));
+		cudaMemcpy(data_d, data_h + seg_size * seg_size * slice_num * emitter_ini, seg_size* seg_size* slice_num* cur_seg_size * sizeof(float), cudaMemcpyHostToDevice);
+		cudaMemcpy(map_ptr_x_d, map_ptr_x_h + emitter_ini, cur_seg_size * sizeof(float), cudaMemcpyHostToDevice);
+		cudaMemcpy(map_ptr_y_d, map_ptr_y_h + emitter_ini, cur_seg_size * sizeof(float), cudaMemcpyHostToDevice);
+		cudaMemcpy(para_config_d, para_config_h, 2*sizeof(int), cudaMemcpyHostToDevice);    // LS offset estimate and initialize fitting parameter
+		//printf("current parameter number is %d, current number of emitters is %d\n", *para_config_h, *(para_config_h + 1));
 		cuda_fitting(dimGrid, dimBlock, para_config_d, coef_det_d, coef_exc_d, data_d, offset_map_d, var_map_d, gain_map_d, map_ptr_x_d, map_ptr_y_d, fitting_para_d, CRLBs_d, LogLikelihood_d, device_debug_d);
-		cudaError_t err = cudaGetLastError();
-		printf("error status: %s\n", cudaGetErrorString(err));
+		//err = cudaGetLastError();
+		//printf("error status 6 parameters: %s\n", cudaGetErrorString(err));
 		err=cudaDeviceSynchronize();
-		printf("error status: %s\n", cudaGetErrorString(err));
+		printf("cudaDeviceSynchronize error status: %s\n", cudaGetErrorString(err));
+		cudaMemGetInfo(&free_byte, &total_byte);
+		used_mem = ((float)total_byte - (float)free_byte) / 1024 / 1024;
+		printf("used memory is %f MB\n", used_mem);
 		*para_config_h = fit_para_num - 1;
-		cudasafe(cudaMemcpy(para_config_d, para_config_h, 3 * sizeof(int), cudaMemcpyHostToDevice), "Memory for num_para copy failed", __LINE__);
-		cudasafe(cudaMemcpy(device_debug_d, device_debug_h, emitter_num * iterations*2 * sizeof(float), cudaMemcpyHostToDevice), "Memory for num_para device_debug failed.", __LINE__);   // fine localization
+		//printf("current parameter number is %d, current number of emitters is %d\n", *para_config_h, *(para_config_h + 1));
+		cudaMemcpy(para_config_d, para_config_h, 2 * sizeof(int), cudaMemcpyHostToDevice);
+		cudaMemset(device_debug_d, 0, calc_seg_mem_size * iterations * 2 * sizeof(float));
+		cudaMemset(LogLikelihood_d, 0, calc_seg_mem_size * sizeof(float));
 		cuda_fitting(dimGrid, dimBlock, para_config_d, coef_det_d, coef_exc_d, data_d, offset_map_d, var_map_d, gain_map_d, map_ptr_x_d, map_ptr_y_d, fitting_para_d, CRLBs_d, LogLikelihood_d, device_debug_d);
+		//err = cudaGetLastError();
+		//printf("error status 5 parameters: %s\n", cudaGetErrorString(err));
 		err=cudaDeviceSynchronize();
-		printf("error status: %s\n", cudaGetErrorString(err));
-		cudasafe(cudaMemcpy(fitting_para_h, fitting_para_d, fit_para_num * emitter_num * sizeof(float), cudaMemcpyDeviceToHost), "cudaMemcpy failed for fitting_parameters.", __LINE__);
-		cudasafe(cudaMemcpy(CRLBs_h, CRLBs_d, fit_para_num * emitter_num * sizeof(float), cudaMemcpyDeviceToHost), "cudaMemcpy failed for CRLB.", __LINE__);
-		cudasafe(cudaMemcpy(LogLikelihood_h, LogLikelihood_d, emitter_num * sizeof(float), cudaMemcpyDeviceToHost), "cudaMemcpy failed for log_likelihood.", __LINE__);
-		cudasafe(cudaMemcpy(device_debug_h, device_debug_d, emitter_num * iterations*2 * sizeof(float), cudaMemcpyDeviceToHost), "cudaMemcpy failed for device_debug.", __LINE__);
-		cudasafe(cudaDeviceReset(), "sync failed", __LINE__);
-		printf("segment set %d fitting finished, %d segment sets left\n", iter+1, calc_seg-iter-1);
+		printf("cudaDeviceSynchronize error status: %s\n", cudaGetErrorString(err));
+		cudaMemGetInfo(&free_byte, &total_byte);
+		used_mem = ((float)total_byte - (float)free_byte) / 1024 / 1024;
+		printf("used memory is %f MB\n", used_mem);
+		cudaMemcpy(fitting_para_h + emitter_ini* fit_para_num, fitting_para_d, fit_para_num * cur_seg_size * sizeof(float), cudaMemcpyDeviceToHost);
+		cudaMemcpy(CRLBs_h + emitter_ini * fit_para_num, CRLBs_d, fit_para_num * cur_seg_size * sizeof(float), cudaMemcpyDeviceToHost);
+		cudaMemcpy(LogLikelihood_h + emitter_ini, LogLikelihood_d, cur_seg_size * sizeof(float), cudaMemcpyDeviceToHost);
+		cudaMemcpy(device_debug_h + emitter_ini * iterations * 2, device_debug_d, cur_seg_size * iterations*2 * sizeof(float), cudaMemcpyDeviceToHost);
+		err=cudaDeviceReset();
+		printf("reset error status: %s\n", cudaGetErrorString(err));
+		printf("segment set %d fitting finished, %d segment sets left\n\n", iter+1, calc_seg-iter-1);
 	}
 	// cuda_kernel end
 
-	/*
-	for (int i = 0; i < 10; i++)
-	{
-		printf("x_ini=%f,x_end=%f, y_ini=%f,y_end=%f, z_ini=%f,z_end=%f, h_ini=%f,h_end=%f, bg_ini=%f,bg_end=%f, current emitter idx=%d\n", *(CRLBs_h + i * 5), *(fitting_para_h + i * 5), *(CRLBs_h + i * 5 + 1), *(fitting_para_h + i * 5 + 1), *(CRLBs_h + i * 5 + 2), *(fitting_para_h + i * 5 + 2), *(CRLBs_h + i * 5 + 3), *(fitting_para_h + i * 5 + 3), *(CRLBs_h + i * 5 + 4), *(fitting_para_h + i * 5 + 4), i + 1);
-	}
-	*/
-	// .mat output
 	double* fitting_para_crlb = new double[emitter_num * fit_para_num];
 	double* fitting_para_end = new double[emitter_num * fit_para_num];
 	double* fitting_para_ChiSq = new double[emitter_num];
@@ -337,10 +368,14 @@ int main()
 	}
 	MATFile* pmat;
 	mxArray* pa1;
-	string file_crlb_full = seg_data_path + "crlb.mat";
-	string file_fitting_para_full = seg_data_path + "fitting_result.mat";
-	string finalChiSq_full = seg_data_path + "ChiSq.mat";
-	string device_debug_out_char_full = seg_data_path + "device_debug_out.mat";
+	string file_crlb_full = seg_data_path + "crlb";
+	file_crlb_full += suffix;
+	string file_fitting_para_full = seg_data_path + "fitting_result";
+	file_fitting_para_full += suffix;
+	string finalChiSq_full = seg_data_path + "ChiSq";
+	finalChiSq_full += suffix;
+	string device_debug_out_char_full = seg_data_path + "device_debug_out";
+	device_debug_out_char_full += suffix;
 	const char* file_crlb = file_crlb_full.c_str();
 	const char* file_fitting_para = file_fitting_para_full.c_str();
 	const char* finalChiSq = finalChiSq_full.c_str();
