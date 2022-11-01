@@ -1,14 +1,9 @@
-#define Data_type 1  // experiment data=1  simulation data=2
-#define CamIdx 1  // det1=1  det2=2
-#define Exposuretime 30 //unit ms
-#define calc_seg_size 5 //unit stack index  parallel Number_stacks in each calculation
 #define seg_size 11 //unit pixel  has to be odd number
-#define slice_num 3  //unit      has to be odd number 7 is maximum number
-#define emitter_num 29221  //unit 
-#define cam_map_size 516  // row
-#define cam_map_size_y 296  // column
+#define cam_map_size 256  // row
+#define cam_map_size_y 256  // column
 #define LS_stepsize 400 //unit nm
-//
+//#define SM_seg_size 4000
+
 #define pixel_size_cam 100  //unit nm
 #define step_size 10  //unit nm    for psf calibration in z 
 #define spline_x 30  //unit has to be even number

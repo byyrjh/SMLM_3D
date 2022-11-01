@@ -13,6 +13,8 @@ __global__ void kernel_cuda_fitting(const int* para_config, const float* coef_de
 {
 	const int idx = (blockIdx.x) * block_size + threadIdx.x;
 	const int* num_para = para_config;
+	const int slice_num = *(para_config + 2);
+	//printf("hello from device, number of emitter=%d\n", *(para_config + 1));
 	if (idx >= *(para_config + 1)) return;
 	if (idx < *(para_config + 1))
 	//if (idx==11)
@@ -57,8 +59,7 @@ __global__ void kernel_cuda_fitting(const int* para_config, const float* coef_de
 		
 		float* NewUpdate = new float[*num_para];  //delta x y z h bg z_offset
 		float* OldUpdate = new float[*num_para];
-		
-		
+
 		for (int i = 0; i < *num_para; i++)
 		{
 			*(NewUpdate + i) = 1e11;
@@ -76,34 +77,29 @@ __global__ void kernel_cuda_fitting(const int* para_config, const float* coef_de
 		memset(U, 0, (*num_para) * (*num_para) * sizeof(float));
 		//delete[] L, U, M, Minv, Diag;
 		
-		
+		kernel_bg_eval(data_cur, offset_map_d, gain_map_d, &pos_x, &pos_y, NewTheta, &slice_num);
+		kernel_h_bg_init(data_cur, offset_map_d, gain_map_d, &pos_x, &pos_y, NewTheta, &slice_num);
+		kernel_xy_init(data_cur, offset_map_d, gain_map_d, &pos_x, &pos_y, NewTheta, &slice_num);
 		if (offset_fit)
 		{
-			kernel_bg_eval(data_cur, offset_map_d, gain_map_d, &pos_x, &pos_y, NewTheta);
-			kernel_h_bg_init(data_cur, offset_map_d, gain_map_d, &pos_x, &pos_y, NewTheta);
-			kernel_xy_init(data_cur, offset_map_d, gain_map_d, &pos_x, &pos_y, NewTheta);
-			*(NewTheta + 2) = 0;
-			*(NewTheta + 5) = 0;
+			*(NewTheta + 2) = 0.001;
+			*(NewTheta + 5) = 0.001;
 		}
 		else
 		{
-			float counter = 0;
-			for (int i = 0; i < *(para_config + 1); i++)
+			if (slice_num == 5)
 			{
-				if (!isnan(*(fitting_para_d + i * fit_para_num + 5)))
-				{
-					offset_global += *(fitting_para_d + i * fit_para_num + 5);
-					++counter;
-				}
+				for (int i = 0; i < 6; i++)
+					if (!isnan(*(fitting_para_d + idx * fit_para_num + i)))
+						NewTheta[i] = *(fitting_para_d + idx * fit_para_num + i);
+					else
+						NewTheta[i] = 0.001;
 			}
-			offset_global /= counter;
-			for (int i = 0; i < 5; i++)
-				if (!isnan(*(fitting_para_d + idx * fit_para_num + i)))
-					NewTheta[i] = *(fitting_para_d + idx * fit_para_num + i);
-				else
-					NewTheta[i] = 0;
-			//NewTheta[5] = offset_global;
-			NewTheta[5] = 5;
+			else
+			{
+				*(NewTheta + 2) = 0.001;
+				*(NewTheta + 5) = *(fitting_para_d + idx * fit_para_num + 5);
+			}
 		}
 		
 		//kernel_z_init(data_cur, offset_map_d, gain_map_d, &pos_x, &pos_y, NewTheta, lat_inten_cali_d);
@@ -325,7 +321,8 @@ __global__ void kernel_cuda_fitting(const int* para_config, const float* coef_de
 				ChiSq_min += 2 * ((model - data) - data * log(model / data));
 			}
 		}
-		*(LogLikelihood_d + idx) = ChiSq_min;
+		if (!offset_fit)
+			*(LogLikelihood_d + idx) = ChiSq_min;
 		kernel_MatInvN(M, Minv, Diag, (*num_para));
 		//if (offset_fit)
 		{
@@ -335,11 +332,9 @@ __global__ void kernel_cuda_fitting(const int* para_config, const float* coef_de
 				*(CRLBs_d + idx * fit_para_num + i) = Diag[i];
 			}
 		}
-		
-		
 		delete[] NewDudt, M, Minv, Diag;
 		return;
-		
+	
 	}//end to if statement
 }
 

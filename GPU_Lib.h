@@ -1,13 +1,13 @@
 #ifndef GPUSPLINELIB_H
 #define GPUSPLINELIB_H
 
-__device__ void kernel_bg_eval(const float* data_cur, const float* offset_map, const float* gain_map, const float* pos_x, const float* pos_y, float* NewTheta);
+__device__ void kernel_bg_eval(const float* data_cur, const float* offset_map, const float* gain_map, const float* pos_x, const float* pos_y, float* NewTheta, const int* slice_num);
 
-__device__ void kernel_h_bg_init(const float* data_cur, const float* offset_map, const float* gain_map, const float* pos_x, const float* pos_y, float* NewTheta);
+__device__ void kernel_h_bg_init(const float* data_cur, const float* offset_map, const float* gain_map, const float* pos_x, const float* pos_y, float* NewTheta, const int* slice_num);
 
-__device__ void kernel_xy_init(const float* data_cur, const float* offset_map, const float* gain_map, const float* pos_x, const float* pos_y, float* NewTheta);
+__device__ void kernel_xy_init(const float* data_cur, const float* offset_map, const float* gain_map, const float* pos_x, const float* pos_y, float* NewTheta, const int* slice_num);
 
-__device__ void kernel_z_init(const float* data_cur, const float* offset_map, const float* gain_map, const float* pos_x, const float* pos_y, float* NewTheta, const float* lat_inten_cali_d);
+__device__ void kernel_z_init(const float* data_cur, const float* offset_map, const float* gain_map, const float* pos_x, const float* pos_y, float* NewTheta, const float* lat_inten_cali_d, const int* slice_num);
 
 __device__ void kernel_computeDelta3D_det(float x_delta, float y_delta, float z_delta, float* delta_f, float* delta_dxf, float* delta_dyf, float* delta_dzf);
 
