@@ -46,18 +46,17 @@ void cudasafe(cudaError_t err, char* str, int lineNumber)
 int main()
 {
 	/////////////////////////////////////////////////////////////////////////////////////////
-	string Cur_dir = "M:\\Hao\\2022_10_24\\fixed_Hela_tubulin_Alexa\\5nM\\cell2";
-	int FM_num = 20000;
-	int SM_num = 666610;
+	string Cur_dir = "M:\\Hao\\2022\\2022_11_14\\alpha_tubules_Alexa647_HeLa\\5 nM\\cell3";
+	string scan_mode = "m0";
+	int FM_num = 27000;
+	int SM_num = 169742;
 	int slice_num_FM = 5;
 	int slice_num_SM = 3;
-	int num_vol = 4000;
-	int Stack_seg_size = 50;   // within which light sheet is considered to be stable
+	int num_vol = 3000;
 	int cuda_seg_size = 4000;  // parallel capability, limited by device
 	int smooth_seg = 30;
 	////////////////////////////////////////////////////////////////////////////////////////////
 	int FM_trace = FM_num / num_vol;
-	int FM_seg_num = num_vol / Stack_seg_size; // has to be the integer factor of FM_num
 	int num_seg_SM = (int)ceil((float)SM_num / (float)cuda_seg_size);
 	int num_seg_FM = (int)ceil((float)FM_num / (float)cuda_seg_size);
 	string cali_path = Cur_dir + "\\setup_calibration\\";
@@ -188,41 +187,6 @@ int main()
 	pa = matGetVariable(curent_mat, name);
 	memcpy(map_ptr_t_h_SM, (float*)mxGetData(pa), SM_num * sizeof(float));
 
-	// data conversion law abcd(:,:,:,1)= 1 2  5 6  abcd(:,:,:,2)= 9  10   13 14
-	//                                    3 4; 7 8                 11 12 ; 15 16
-
-	/*
-	TIFF* imgstack = TIFFOpen("test_sub.tif", "r");
-
-	if (imgstack) {
-		uint32 imagelength;
-		uint32 imagewidth;
-		tdata_t buf;
-		uint32 row, idx, cur_dir;
-		uint16_t* line_elements, elements;
-		uint16_t arr[250];
-		TIFFGetField(imgstack, TIFFTAG_IMAGELENGTH, &imagelength);
-		TIFFGetField(imgstack, TIFFTAG_IMAGEWIDTH, &imagewidth);
-		uint16_t* rowdata=new uint16_t[imagewidth* imagelength* 10];
-		buf = _TIFFmalloc(TIFFScanlineSize(imgstack));
-		cur_dir = 0;
-		do
-		{
-			for (row = 0; row < imagelength; row++)
-			{
-				TIFFReadScanline(imgstack, buf, row);
-				line_elements = static_cast<uint16_t*>(buf);
-				memcpy(rowdata + row * 5+ cur_dir* imagelength* imagewidth, line_elements, imagewidth * sizeof(uint16_t));
-				memcpy(arr + row * 5 + cur_dir * imagelength * imagewidth, line_elements, imagewidth * sizeof(uint16_t));
-			}
-			cur_dir++;
-		} while (TIFFReadDirectory(imgstack));
-
-		_TIFFfree(buf);
-		TIFFClose(imgstack);
-		delete[] rowdata;
-	}
-	*/
 	float* coef_det_d;
 	float* coef_exc_d;
 	float* data_d;
@@ -261,6 +225,11 @@ int main()
 	cudaDeviceProp deviceProp;
 	cudaGetDeviceCount(&deviceCount);
 	cudaGetDeviceProperties(&deviceProp, 0);
+	cudaSetDevice(0);
+	//int dev_idx;
+	//int use_dev = 0;
+	//int num_dev = 1;
+	//cudaSetValidDevices(&use_dev, num_dev);
 	const size_t availableMemory = deviceProp.totalGlobalMem / 1024 / 1024;//unit MByte
 	cudaDeviceSetCacheConfig(cudaFuncCachePreferL1);
 
@@ -270,6 +239,8 @@ int main()
 	size_t free_byte;
 	size_t total_byte;
 	float used_mem;
+	MATFile* pmat;
+	mxArray* pa1;
 	// fiducial marker fitting
 	for (int fitting_stage = 0; fitting_stage < 2; fitting_stage++)
 	{
@@ -282,6 +253,7 @@ int main()
 			else
 				cur_seg_size = FM_num - seg_idx * cuda_seg_size;
 			// global const in
+
 			cudaMalloc((void**)&coef_det_d, spline_x * spline_y * spline_z * num_coef_per_pix * sizeof(float));
 			cudaMalloc((void**)&coef_exc_d, spline_z * num_coef_per_pix_axial * sizeof(float));
 			cudaMalloc((void**)&offset_map_d, cam_map_size * cam_map_size_y * sizeof(float));
@@ -323,7 +295,10 @@ int main()
 			cudaMemcpy(para_config_d, para_config_h, 3 * sizeof(int), cudaMemcpyHostToDevice);    // LS offset estimate and initialize fitting parameter
 			cudaMemcpy(fitting_para_d, fitting_para_h + cur_ini_idx * fit_para_num, fit_para_num * cur_seg_size * sizeof(int), cudaMemcpyHostToDevice);
 			cudaMemcpy(CRLBs_d, CRLBs_h + cur_ini_idx * fit_para_num, fit_para_num * cur_seg_size * sizeof(int), cudaMemcpyHostToDevice);
+			cudaSetDevice(0);
 			cuda_fitting(dimGrid, dimBlock, para_config_d, coef_det_d, coef_exc_d, data_d, offset_map_d, var_map_d, gain_map_d, map_ptr_x_d, map_ptr_y_d, fitting_para_d, CRLBs_d, LogLikelihood_d, device_debug_d);
+			//cudaGetDevice(&dev_idx);
+			//printf("current used device is %d\n", dev_idx);
 			err = cudaDeviceSynchronize();
 			printf("cudaDeviceSynchronize error status: %s\n", cudaGetErrorString(err));
 			cudaMemGetInfo(&free_byte, &total_byte);
@@ -338,97 +313,152 @@ int main()
 			printf("Fiducial marker fitting stage %d finished\n", (fitting_stage + 1));
 		}
 		
-		//  linearly fit lightsheet offset as the function of y_pos(light sheet propagating direction)
+		//  smooth LS offset
 		if (fitting_stage == 0)
 		{
-			int cur_idx;
-			float* y_mat = new float[FM_seg_num * FM_trace];
-			float* os_mat = new float[FM_seg_num * FM_trace];
-			float* lin_coef = new float[FM_seg_num * 2];
-			for (int i = 0; i < FM_seg_num; i++) //18 segs
+			double* test_LS_os = new double[FM_trace * num_vol];
+			memset(test_LS_os, 0, FM_trace * num_vol * sizeof(double));
+			double* test_dist = new double[SM_num];
+			memset(test_dist, 0, SM_num * sizeof(double));
+			for (int j = 0; j < num_vol; j++)
 			{
-				for (int j = 0; j < FM_trace; j++)  //6 markers
+				int ini_idx = j - smooth_seg / 2;
+				int end_idx = j + smooth_seg / 2;
+				int smooth_seg_size;
+				if (ini_idx < 0)
 				{
-					float os_count = 0;
-					float pos_y = 0;
-					float cur_os = 0;
-					for (int k = 0; k < Stack_seg_size; k++) //50 samplings
+					smooth_seg_size = 1 + smooth_seg + ini_idx;
+					ini_idx = 0;
+				}
+				else if (end_idx > (num_vol - 1))
+					smooth_seg_size = smooth_seg + num_vol - end_idx;
+				else
+					smooth_seg_size = 1 + smooth_seg;
+				for (int FM_idx = 0; FM_idx < FM_trace; FM_idx++)  // FM data structure 11111 22222 33333 44444 55555 .... 12345 represent time(volume indices) 5 FMs are sorted in the same way for each block
+				{
+					float LS_os = 0;
+					float os_counter = 0;
+					int cur_idx;
+					int FM_pos = j * FM_trace + FM_idx;
+					for (int cur_smooth_seg = 0; cur_smooth_seg < smooth_seg_size; cur_smooth_seg++)
 					{
-						cur_idx = Stack_seg_size * FM_trace * i + FM_trace * k + j;
-						pos_y += *(map_ptr_y_h_FM + cur_idx);
+						cur_idx = ini_idx * FM_trace + FM_idx + cur_smooth_seg * FM_trace;
 						if (!isnan(*(fitting_para_h + cur_idx * fit_para_num + 5)))
 						{
-							cur_os += *(fitting_para_h + cur_idx * fit_para_num + 5);
-							++os_count;
+							LS_os += *(fitting_para_h + cur_idx * fit_para_num + 5);
+							++os_counter;
 						}
 					}
-					pos_y /= Stack_seg_size;
-					cur_os /= os_count;
-					*(y_mat + i * FM_trace + j) = pos_y;
-					*(os_mat + i * FM_trace + j) = cur_os;
+					*(fitting_para_h + FM_pos * fit_para_num + 5) = LS_os / os_counter;
+					*(test_LS_os + j * FM_trace + FM_idx) = (double)*(fitting_para_h + FM_pos * fit_para_num + 5);
 				}
-				float xsum = 0, x2sum = 0, ysum = 0, xysum = 0;
+			}
+			
+			string file_test_os = seg_data_path + "LS_os_" + scan_mode + ".mat";
+			const char* file_os = file_test_os.c_str();
+			pmat = matOpen(file_os, "w");
+			pa1 = mxCreateDoubleMatrix(FM_trace, num_vol, mxREAL);
+			memcpy((void*)(mxGetPr(pa1)), (void*)test_LS_os, FM_trace* num_vol * sizeof(double));
+			matPutVariable(pmat, "LS_os", pa1);
+			mxDestroyArray(pa1);
+			matClose(pmat);
+			
+			float* dist_to_FM = new float[FM_trace];
+			for (int i = 0; i < SM_num; i++)
+			{
+				int idx_stack = *(map_ptr_t_h_SM + i) - 1;
+				float cur_SM_x = *(map_ptr_x_h_SM + i);
+				float cur_SM_y = *(map_ptr_y_h_SM + i);
+				float nor_deno = 0;
 				for (int j = 0; j < FM_trace; j++)
 				{
-					xsum += *(y_mat + i * FM_trace + j);
-					ysum += *(os_mat + i * FM_trace + j);
-					x2sum += (float)pow(*(y_mat + i * FM_trace + j),2);
-					xysum += (*(y_mat + i * FM_trace + j)) * (*(os_mat + i * FM_trace + j));
+					*(dist_to_FM + j) = sqrt(pow(cur_SM_x - *(map_ptr_x_h_FM + FM_trace * idx_stack + j), 2) + pow(cur_SM_y - *(map_ptr_y_h_FM + FM_trace * idx_stack + j), 2));
+					nor_deno += 1 / *(dist_to_FM + j);
 				}
-				*(lin_coef + i * 2) = (FM_trace * xysum - xsum * ysum) / (FM_trace * x2sum - xsum * xsum);
-				*(lin_coef + i * 2 + 1) = (x2sum * ysum - xsum * xysum) / (x2sum * FM_trace - xsum * xsum);
-				// printf("a equals to % f and b equals to % f\n", *(lin_coef + i * 2), *(lin_coef + i * 2 + 1));
+				for (int j = 0; j < FM_trace; j++)
+				{
+					*(fitting_para_SM_h + i * fit_para_num + 5) += 1 / *(dist_to_FM + j) * ((float)*(test_LS_os + idx_stack * FM_trace + j)) / nor_deno;
+				}
+				*(test_dist + i) = (double)*(fitting_para_SM_h + i * fit_para_num + 5);
 			}
 
-			for (int i = 0; i < SM_num; i++)
-			{
-				float idx_stack = *(map_ptr_t_h_SM + i) - 1;
-				int seg_idx = idx_stack / Stack_seg_size;
-				float y_pos = *(map_ptr_y_h_SM + i);
-				*(fitting_para_SM_h + i * fit_para_num + 5) = 0;// y_pos* (*(lin_coef + seg_idx * 2)) + *(lin_coef + seg_idx * 2 + 1);
-			}
-
-			//////////////////////////// old version //////////////////////////////
-			/*
-			int FM_seg_size = FM_num / FM_seg_num; //FM_seg_num=18
-			vector<float> offset_mean;
-			for (int i = 0; i < FM_seg_num; i++)
-			{
-				float offset_temp = 0;
-				float counter = 0;
-				for (int j = 0; j < FM_seg_size; j++)
-				{
-					int idx = i * FM_seg_size * fit_para_num + j * fit_para_num + 5;
-					float cur_os = *(fitting_para_h + idx);
-					*(offset_tally_h + FM_seg_size * i + j) = cur_os;
-					if (!isnan(cur_os))
-					{
-						offset_temp += cur_os;
-						++counter;
-					}
-				}
-				offset_temp /= counter;
-				offset_mean.push_back(offset_temp);
-				for (int j = 0; j < FM_seg_size; j++)
-				{
-					int idx = i * FM_seg_size * fit_para_num + j * fit_para_num + 5;
-					*(fitting_para_h + idx) = offset_temp;
-				}
-			}
-			for (int i = 0; i < SM_num; i++)
-			{
-				float idx_stack = *(map_ptr_t_h_SM + i)-1;
-				int seg_idx = idx_stack / Stack_seg_size;
-				*(fitting_para_SM_h + i * fit_para_num + 5) = offset_mean[seg_idx];
-			}
-			*/
+			
+			string file_test_SM_os = seg_data_path + "SM_LS_os_" + scan_mode + ".mat";
+			const char* file_SM_os = file_test_SM_os.c_str();
+			pmat = matOpen(file_SM_os, "w");
+			pa1 = mxCreateDoubleMatrix(SM_num,1, mxREAL);
+			memcpy((void*)(mxGetPr(pa1)), (void*)test_dist, SM_num * sizeof(double));
+			matPutVariable(pmat, "SM_LS_os", pa1);
+			mxDestroyArray(pa1);
+			matClose(pmat);
+			
 		}
 
 	}
-	
+	// FM fitting output
+	double* fitting_para_crlb = new double[FM_num * fit_para_num];
+	double* fitting_para_end = new double[FM_num * fit_para_num];
+	double* fitting_para_ChiSq = new double[FM_num];
+	double* device_debug_out = new double[iterations * 2 * FM_num];
+	memset(fitting_para_crlb, 0, FM_num* fit_para_num * sizeof(double));
+	memset(fitting_para_end, 0, FM_num* fit_para_num * sizeof(double));
+	memset(fitting_para_ChiSq, 0, FM_num * sizeof(double));
+	memset(device_debug_out, 0, iterations * 2 * FM_num * sizeof(double));
+	for (int i = 0; i < FM_num; i++)
+	{
+		*(fitting_para_ChiSq + i) = (double)*(LogLikelihood_h + i);
+		for (int j = 0; j < iterations * 2; j++)
+		{
+			*(device_debug_out + i * iterations * 2 + j) = (double)*(device_debug_h + i * iterations * 2 + j);
+		}
+	}
+	for (int i = 0; i < FM_num * fit_para_num; i++)
+	{
+		*(fitting_para_crlb + i) = (double)*(CRLBs_h + i);
+		*(fitting_para_end + i) = (double)*(fitting_para_h + i);
+	}
+	string file_crlb_full = seg_data_path + "crlb_FM_" + scan_mode + ".mat";
+	string file_fitting_para_full = seg_data_path + "fitting_result_FM_" + scan_mode + ".mat";
+	string finalChiSq_full = seg_data_path + "ChiSq_FM_" + scan_mode + ".mat";
+	string device_debug_out_char_full = seg_data_path + "device_debug_out_FM_" + scan_mode + ".mat";
+	const char* file_crlb = file_crlb_full.c_str();
+	const char* file_fitting_para = file_fitting_para_full.c_str();
+	const char* finalChiSq = finalChiSq_full.c_str();
+	const char* device_debug_out_char = device_debug_out_char_full.c_str();
+
+	pmat = matOpen(file_crlb, "w");
+	pa1 = mxCreateDoubleMatrix(fit_para_num, FM_num, mxREAL);
+	memcpy((void*)(mxGetPr(pa1)), (void*)fitting_para_crlb, fit_para_num * FM_num * sizeof(double));
+	matPutVariable(pmat, "crlb_results", pa1);
+	mxDestroyArray(pa1);
+	matClose(pmat);
+
+	pmat = matOpen(file_fitting_para, "w");
+	pa1 = mxCreateDoubleMatrix(fit_para_num, FM_num, mxREAL);
+	memcpy((void*)(mxGetPr(pa1)), (void*)fitting_para_end, fit_para_num * FM_num * sizeof(double));
+	matPutVariable(pmat, "fitting_results", pa1);
+	mxDestroyArray(pa1);
+	matClose(pmat);
+
+	pmat = matOpen(finalChiSq, "w");
+	pa1 = mxCreateDoubleMatrix(FM_num, 1, mxREAL);
+	memcpy((void*)(mxGetPr(pa1)), (void*)fitting_para_ChiSq, FM_num * sizeof(double));
+	matPutVariable(pmat, "ChiSq", pa1);
+	mxDestroyArray(pa1);
+	matClose(pmat);
+
+	pmat = matOpen(device_debug_out_char, "w");
+	pa1 = mxCreateDoubleMatrix(iterations * 2, FM_num, mxREAL);
+	memcpy((void*)(mxGetPr(pa1)), (void*)device_debug_out, FM_num * iterations * 2 * sizeof(double));
+	matPutVariable(pmat, "test", pa1);
+	mxDestroyArray(pa1);
+	matClose(pmat);
+
+
 	// single molecule fitting
 	for (int seg_idx = 0; seg_idx < num_seg_SM; seg_idx++)
 	{
+		cudaSetDevice(0);
 		cudaMalloc((void**)&coef_det_d, spline_x* spline_y* spline_z* num_coef_per_pix * sizeof(float));
 		cudaMalloc((void**)&coef_exc_d, spline_z* num_coef_per_pix_axial * sizeof(float));
 		cudaMalloc((void**)&offset_map_d, cam_map_size* cam_map_size_y * sizeof(float));
@@ -474,9 +504,9 @@ int main()
 		cudaMemcpy(map_ptr_y_d, map_ptr_y_h_SM + cur_ini_idx, cur_seg_size * sizeof(float), cudaMemcpyHostToDevice);
 		cudaMemcpy(para_config_d, para_config_h, 3 * sizeof(int), cudaMemcpyHostToDevice);    // LS offset estimate and initialize fitting parameter
 		cudaMemcpy(fitting_para_d, fitting_para_SM_h + cur_ini_idx * fit_para_num, fit_para_num * cur_seg_size * sizeof(int), cudaMemcpyHostToDevice);
-
+		cudaSetDevice(0);
 		cuda_fitting(dimGrid, dimBlock, para_config_d, coef_det_d, coef_exc_d, data_d, offset_map_d, var_map_d, gain_map_d, map_ptr_x_d, map_ptr_y_d, fitting_para_d, CRLBs_d, LogLikelihood_d, device_debug_d);
-
+		cudaSetDevice(0);
 		err = cudaDeviceSynchronize();
 		printf("cudaDeviceSynchronize error status: %s\n", cudaGetErrorString(err));
 		cudaMemGetInfo(&free_byte, &total_byte);
@@ -487,85 +517,16 @@ int main()
 		cudaMemcpy(CRLBs_SM_h + cur_ini_idx * fit_para_num, CRLBs_d, fit_para_num * cur_seg_size * sizeof(float), cudaMemcpyDeviceToHost);
 		cudaMemcpy(LogLikelihood_SM_h + cur_ini_idx, LogLikelihood_d, cur_seg_size * sizeof(float), cudaMemcpyDeviceToHost);
 		cudaMemcpy(device_debug_SM_h+ cur_ini_idx * iterations * 2, device_debug_d, cur_seg_size* iterations * 2 * sizeof(float), cudaMemcpyDeviceToHost);
+		cudaSetDevice(0);
 		err = cudaDeviceReset();
 		printf("reset error status: %s\n", cudaGetErrorString(err));
 		printf("segment set %d fitting finished, %d segment sets left\n\n", seg_idx + 1, num_seg_SM - seg_idx - 1);
 	}
 	// cuda_kernel end
-	// out put
+	// SM fitting output
 		
-	double* fitting_para_crlb = new double[FM_num * fit_para_num];
-	double* fitting_para_end = new double[FM_num * fit_para_num];
-	double* fitting_para_ChiSq = new double[FM_num];
-	double* device_debug_out = new double[iterations*2 * FM_num];
-	double* offset_tally_out = new double[FM_num];
-	memset(fitting_para_crlb, 0, FM_num* fit_para_num * sizeof(double));
-	memset(fitting_para_end, 0, FM_num* fit_para_num * sizeof(double));
-	memset(fitting_para_ChiSq, 0, FM_num * sizeof(double));
-	memset(device_debug_out, 0, iterations * 2 * FM_num * sizeof(double));
-	memset(offset_tally_out, 0, FM_num * sizeof(double));
-	for (int i = 0; i < FM_num; i++)
-	{
-		*(fitting_para_ChiSq + i) = (double)*(LogLikelihood_h + i);
-		// *(offset_tally_out + i) = (double)*(offset_tally_h + i);
-		for (int j = 0; j < iterations*2; j++)
-		{
-			*(device_debug_out + i * iterations*2 + j) = (double)*(device_debug_h + i * iterations*2 + j);
-		}
-	}
-	for (int i = 0; i < FM_num * fit_para_num; i++)
-	{
-		*(fitting_para_crlb + i) = (double)*(CRLBs_h + i);
-		*(fitting_para_end + i) = (double)*(fitting_para_h + i);
-	}
-	MATFile* pmat;
-	mxArray* pa1;
-	string file_crlb_full = seg_data_path + "crlb_FM_m0.mat";
-	string file_fitting_para_full = seg_data_path + "fitting_result_FM_m0.mat";
-	string finalChiSq_full = seg_data_path + "ChiSq_FM_m0.mat";
-	string device_debug_out_char_full = seg_data_path + "device_debug_out_FM_m0.mat";
-	//string file_offset_tally_out = seg_data_path + "offset_tally_FM_m0.mat";
-	const char* file_crlb = file_crlb_full.c_str();
-	const char* file_fitting_para = file_fitting_para_full.c_str();
-	const char* finalChiSq = finalChiSq_full.c_str();
-	const char* device_debug_out_char = device_debug_out_char_full.c_str();
-	//const char* offset_tally_out_char = file_offset_tally_out.c_str();
+	
 
-	pmat = matOpen(file_crlb, "w");
-	pa1 = mxCreateDoubleMatrix(fit_para_num, FM_num, mxREAL);
-	memcpy((void*)(mxGetPr(pa1)), (void*)fitting_para_crlb, fit_para_num * FM_num * sizeof(double));
-	matPutVariable(pmat, "crlb_results", pa1);
-	mxDestroyArray(pa1);
-	matClose(pmat);
-
-	pmat = matOpen(file_fitting_para, "w");
-	pa1 = mxCreateDoubleMatrix(fit_para_num, FM_num, mxREAL);
-	memcpy((void*)(mxGetPr(pa1)), (void*)fitting_para_end, fit_para_num * FM_num * sizeof(double));
-	matPutVariable(pmat, "fitting_results", pa1);
-	mxDestroyArray(pa1);
-	matClose(pmat);
-
-	pmat = matOpen(finalChiSq, "w");
-	pa1 = mxCreateDoubleMatrix(FM_num, 1, mxREAL);
-	memcpy((void*)(mxGetPr(pa1)), (void*)fitting_para_ChiSq, FM_num * sizeof(double));
-	matPutVariable(pmat, "ChiSq", pa1);
-	mxDestroyArray(pa1);
-	matClose(pmat);
-
-	pmat = matOpen(device_debug_out_char, "w");
-	pa1 = mxCreateDoubleMatrix(iterations*2, FM_num, mxREAL);
-	memcpy((void*)(mxGetPr(pa1)), (void*)device_debug_out, FM_num* iterations*2 * sizeof(double));
-	matPutVariable(pmat, "test", pa1);
-	mxDestroyArray(pa1);
-	matClose(pmat);
-	/*
-	pmat = matOpen(offset_tally_out_char, "w");
-	pa1 = mxCreateDoubleMatrix(FM_num, 1, mxREAL);
-	memcpy((void*)(mxGetPr(pa1)), (void*)offset_tally_out, FM_num * sizeof(double));
-	matPutVariable(pmat, "offset_tally", pa1);
-	mxDestroyArray(pa1);
-	matClose(pmat);
-	*/
 	double* fitting_para_crlb_SM = new double[SM_num * fit_para_num];
 	double* fitting_para_end_SM = new double[SM_num * fit_para_num];
 	double* fitting_para_ChiSq_SM = new double[SM_num];
@@ -588,10 +549,10 @@ int main()
 		*(fitting_para_end_SM + i) = (double)*(fitting_para_SM_h + i);
 	}
 
-	string file_crlb_full_SM = seg_data_path + "crlb_SM_m0.mat";
-	string file_fitting_para_full_SM = seg_data_path + "fitting_result_SM_m0.mat";
-	string finalChiSq_full_SM = seg_data_path + "ChiSq_SM_m0.mat";
-	string device_debug_out_char_full_SM = seg_data_path + "device_debug_out_SM_m0.mat";
+	string file_crlb_full_SM = seg_data_path + "crlb_SM_" + scan_mode + ".mat";
+	string file_fitting_para_full_SM = seg_data_path + "fitting_result_SM_" + scan_mode + ".mat";
+	string finalChiSq_full_SM = seg_data_path + "ChiSq_SM_" + scan_mode + ".mat";
+	string device_debug_out_char_full_SM = seg_data_path + "device_debug_out_SM_" + scan_mode + ".mat";
 	const char* file_crlb_SM = file_crlb_full_SM.c_str();
 	const char* file_fitting_para_SM = file_fitting_para_full_SM.c_str();
 	const char* finalChiSq_SM = finalChiSq_full_SM.c_str();
