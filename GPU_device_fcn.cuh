@@ -8,18 +8,18 @@
 #include <cstdlib>
 #include <cstring>
 
-__device__ inline void kernel_bg_eval(const float* data_cur, const float* offset_map, const float* gain_map, const float* pos_x, const float* pos_y, float* NewTheta, const int* slice_num)
+__device__ inline void kernel_bg_eval(const float* data_cur, const float* offset_map, const float* gain_map, const float* pos_x, const float* pos_y, float* NewTheta, int slice_num, int camsize)
 {
 	float max_num_pho = 0;
 	float min_num_pho = 0;
-	for (int kk = 0; kk < *slice_num; kk++)
+	for (int kk = 0; kk < slice_num; kk++)
 	{
 		for (int ii = 0; ii < seg_size; ii++) for (int jj = 0; jj < seg_size; jj++) // jj is inner loop
 		{
 			int i = jj + ii * seg_size;
 			int rem_idx = (i + 1) % seg_size;
 			if (rem_idx == 0) rem_idx = seg_size;
-			int cur_idx = (static_cast<int>(*pos_y) - ((seg_size - 1) / 2 + 1) + (i + 1 - rem_idx) / seg_size) * cam_map_size + static_cast<int>(*pos_x) - ((seg_size - 1) / 2 + 1) + rem_idx - 1;
+			int cur_idx = (static_cast<int>(*pos_y) - ((seg_size - 1) / 2 + 1) + (i + 1 - rem_idx) / seg_size) * camsize + static_cast<int>(*pos_x) - ((seg_size - 1) / 2 + 1) + rem_idx - 1;
 			float cur_offset = *(offset_map + cur_idx);   //calculate map index
 			float cur_gain = *(gain_map + cur_idx);
 			max_num_pho = fmaxf(max_num_pho, (data_cur[kk * seg_size * seg_size + seg_size * ii + jj] - cur_offset) / cur_gain);
@@ -31,7 +31,7 @@ __device__ inline void kernel_bg_eval(const float* data_cur, const float* offset
 	*(NewTheta + 4) = min_num_pho;
 }
 
-__device__ inline void kernel_h_bg_init(const float* data_cur, const float* offset_map, const float* gain_map, const float* pos_x, const float* pos_y, float* NewTheta, const int* slice_num)
+__device__ inline void kernel_h_bg_init(const float* data_cur, const float* offset_map, const float* gain_map, const float* pos_x, const float* pos_y, float* NewTheta, int slice_num, int camsize)
 {
 	//        calculate histogram  and initialize h and bg
 	float max_num_pho = *(NewTheta + 3);
@@ -41,11 +41,11 @@ __device__ inline void kernel_h_bg_init(const float* data_cur, const float* offs
 		*(hist_dens + i) = 0;
 	float bin_width = (max_num_pho - min_num_pho) / binsize;
 	//calculate map index
-	for (int kk = 0; kk < *slice_num; kk++) for (int ii = 0; ii < seg_size; ii++)for (int jj = 0; jj < seg_size; jj++)
+	for (int kk = 0; kk < slice_num; kk++) for (int ii = 0; ii < seg_size; ii++)for (int jj = 0; jj < seg_size; jj++)
 	{
 		int rem_idx = (jj + ii * seg_size + 1) % seg_size;
 		if (rem_idx == 0) rem_idx = seg_size;
-		int cur_idx = (static_cast<int>(*pos_y) - ((seg_size - 1) / 2 + 1) + (jj + ii * seg_size + 1 - rem_idx) / seg_size) * cam_map_size + static_cast<int>(*pos_x) - ((seg_size - 1) / 2 + 1) + rem_idx - 1;
+		int cur_idx = (static_cast<int>(*pos_y) - ((seg_size - 1) / 2 + 1) + (jj + ii * seg_size + 1 - rem_idx) / seg_size) * camsize + static_cast<int>(*pos_x) - ((seg_size - 1) / 2 + 1) + rem_idx - 1;
 		float cur_offset = *(offset_map + cur_idx);
 		float cur_gain = *(gain_map + cur_idx);
 		int bin_pos = 0;
@@ -59,7 +59,7 @@ __device__ inline void kernel_h_bg_init(const float* data_cur, const float* offs
 	int occurre = 0;
 	for (int i = 0; i < binsize; i++)
 	{
-		hist_cum += ((float)*(hist_dens + binsize - 1 - i)) / (seg_size * seg_size * (*slice_num));
+		hist_cum += ((float)*(hist_dens + binsize - 1 - i)) / (seg_size * seg_size * slice_num);
 		if (hist_cum > p_value && h_idx == 0) h_idx = i;
 		if (*(hist_dens + binsize - 1 - i) > occurre)
 		{
@@ -72,7 +72,7 @@ __device__ inline void kernel_h_bg_init(const float* data_cur, const float* offs
 	delete[] hist_dens;
 }
 
-__device__ inline void kernel_xy_init(const float* data_cur, const float* offset_map, const float* gain_map, const float* pos_x, const float* pos_y, float* NewTheta, const int* slice_num)
+__device__ inline void kernel_xy_init(const float* data_cur, const float* offset_map, const float* gain_map, const float* pos_x, const float* pos_y, float* NewTheta, int slice_num, int camsize)
 {
 
 	float* tmpx = new float[1];
@@ -86,14 +86,14 @@ __device__ inline void kernel_xy_init(const float* data_cur, const float* offset
 	const float bg = *(NewTheta + 4);
 
 
-	for (int kk = 0; kk < *slice_num; kk++)
+	for (int kk = 0; kk < slice_num; kk++)
 	{
 		for (int ii = 0; ii < seg_size; ii++) for (int jj = 0; jj < seg_size; jj++) // jj is inner loop
 		{
 			int i = jj + ii * seg_size;
 			int rem_idx = (i + 1) % seg_size;
 			if (rem_idx == 0) rem_idx = seg_size;
-			int cur_idx = (static_cast<int>(*pos_y) - ((seg_size - 1) / 2 + 1) + (i + 1 - rem_idx) / seg_size) * cam_map_size + static_cast<int>(*pos_x) - ((seg_size - 1) / 2 + 1) + rem_idx - 1;
+			int cur_idx = (static_cast<int>(*pos_y) - ((seg_size - 1) / 2 + 1) + (i + 1 - rem_idx) / seg_size) * camsize + static_cast<int>(*pos_x) - ((seg_size - 1) / 2 + 1) + rem_idx - 1;
 			float cur_offset = *(offset_map + cur_idx);   //calculate map index
 			float cur_gain = *(gain_map + cur_idx);
 			*tmpy += fmaxf((data_cur[kk * seg_size * seg_size + seg_size * ii + jj] - cur_offset) / cur_gain - bg, 0) * (ii + 1);
@@ -116,8 +116,8 @@ __device__ inline void kernel_xy_init(const float* data_cur, const float* offset
 	delete[] tmpz;
 	delete[] tmpsum;
 }
-
-__device__ inline void kernel_z_init(const float* data_cur, const float* offset_map, const float* gain_map, const float* pos_x, const float* pos_y, float* NewTheta, const float* lat_inten_cali_d, const int* slice_num)
+/*
+__device__ inline void kernel_z_init(const float* data_cur, const float* offset_map, const float* gain_map, const float* pos_x, const float* pos_y, float* NewTheta, const float* lat_inten_cali_d, const int* slice_num, int camsize)
 {
 	float x_pos = *NewTheta;//jj
 	float y_pos = *(NewTheta + 1);//ii
@@ -132,7 +132,7 @@ __device__ inline void kernel_z_init(const float* data_cur, const float* offset_
 			int i = jj + ii * seg_size;
 			int rem_idx = (i + 1) % seg_size;
 			if (rem_idx == 0) rem_idx = seg_size;
-			int cur_idx = (static_cast<int>(*pos_y) - ((seg_size - 1) / 2 + 1) + (i + 1 - rem_idx) / seg_size) * cam_map_size + static_cast<int>(*pos_x) - ((seg_size - 1) / 2 + 1) + rem_idx - 1;
+			int cur_idx = (static_cast<int>(*pos_y) - ((seg_size - 1) / 2 + 1) + (i + 1 - rem_idx) / seg_size) * camsize + static_cast<int>(*pos_x) - ((seg_size - 1) / 2 + 1) + rem_idx - 1;
 			float cur_offset = *(offset_map + cur_idx);   //calculate map index
 			float cur_gain = *(gain_map + cur_idx);
 			upper_mo += fmaxf((data_cur[kk * seg_size * seg_size + seg_size * ii + jj] - cur_offset) / cur_gain - bg, 0);
@@ -152,7 +152,7 @@ __device__ inline void kernel_z_init(const float* data_cur, const float* offset_
 	}
 	*(NewTheta + 2) = z_pos;
 }
-
+*/
 __device__ inline void kernel_computeDelta3D_det(float x_delta, float y_delta, float z_delta, float* delta_f, float* delta_dxf, float* delta_dyf, float* delta_dzf)
 {
 

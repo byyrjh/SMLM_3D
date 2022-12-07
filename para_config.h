@@ -1,6 +1,6 @@
 #define seg_size 11 //unit pixel  has to be odd number
-#define cam_map_size 308  // row
-#define cam_map_size_y 308  // column
+//#define cam_map_size 276  // row
+//#define cam_map_size_y 276  // column
 #define LS_stepsize 400 //unit nm
 //#define SM_seg_size 4000
 
@@ -24,6 +24,9 @@
 #define INIT_LAMBDA 1.0f	//main algorithm para
 #define SCALE_UP 5    //main algorithm para
 #define SCALE_DOWN 0.2f    //main algorithm para
+
+
+
 
 //application of Bayes theorem to localization 
 
