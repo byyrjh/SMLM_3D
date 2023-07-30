@@ -50,27 +50,18 @@ vector<vector<vector<float>>> LS_os_calc_SM(float* fitting_para_SM_h, float* map
 			}
 		}
 	}
-	// Light sheet offset smoothing and interpolating in t
-	vector<double> time_samp;
-	vector<double> data_samp;
-	vector<double> time_comp;
-	vector<double> data_comp;
-	//tk::spline smoothed_os;
+	// Light sheet offset smoothing in t
 	float cur_os;
 	float sum;
 	float counter;
 	int ini_idx;
 	int end_idx;
 	int smooth_seg_size;
-	//DoubleVec res;
+
 	for (int i = 0; i < y_range; i++)
 	{
 		for (int j = 0; j < x_range; j++)
 		{
-			time_samp.clear();
-			data_samp.clear();
-			time_comp.clear();
-			data_comp.clear();
 			for (int k = 0; k < t_range; k++)
 			{
 				ini_idx = k - smooth_seg_SM / 2;
@@ -95,32 +86,7 @@ vector<vector<vector<float>>> LS_os_calc_SM(float* fitting_para_SM_h, float* map
 					}
 				}
 				mat_os_SM_smo[k][i][j] = sum / counter;
-				/*
-				if (!isnan(mat_os_SM_smo[k][i][j]))
-				{
-					time_samp.push_back((double)k);
-					data_samp.push_back((double)mat_os_SM_smo[k][i][j]);
-				}
-				time_comp.push_back((double)k);
-				*/
 			}
-
-			/*
-			if (data_samp.size()>10)
-			{
-				res = interpolation(time_samp, data_samp, time_comp);
-				for (int k = 0; k < t_range; k++)
-				{
-					cur_os = res[k];
-					mat_os_SM_smo[k][i][j] = (float)cur_os;
-				}
-			}
-			else
-			{
-				for (int k = 0; k < t_range; k++)
-					mat_os_SM_smo[k][i][j] = 0;
-			}
-			*/
 		}
 	}
 	for (int i = 0; i < SM_num; i++)
@@ -128,7 +94,47 @@ vector<vector<vector<float>>> LS_os_calc_SM(float* fitting_para_SM_h, float* map
 		int idx_t = *(map_ptr_t_h_SM + i) - 1;
 		int idx_x = (int)(ceil(*(map_ptr_x_h_SM + i) / (xybinsize_SM / pixel_size_cam)) - 1);
 		int idx_y = (int)(ceil(*(map_ptr_y_h_SM + i) / (xybinsize_SM / pixel_size_cam)) - 1);
-		*(fitting_para_SM_h + i * fit_para_num + 5) = mat_os_SM_smo[idx_t][idx_y][idx_x];
+		//*(fitting_para_SM_h + i * fit_para_num + 5) = mat_os_SM_smo[idx_t][idx_y][idx_x];
 	}
 	return mat_os_SM_smo;
+}
+
+void LS_os_calc_FM(float* fitting_para_h, double* test_LS_os, int& num_vol, float& stationary_pos_ptr, float& vol_per_hyper_ptr, int& smooth_seg, int& FM_trace)
+{
+	int vol_per_hyper = vol_per_hyper_ptr - stationary_pos_ptr + 1;
+	int num_hyperstack = num_vol / vol_per_hyper;
+	int smooth_seg_size;
+	int ini_idx;
+	int end_idx;
+	int cur_FM_idx;
+	for (int cur_hyper = 0; cur_hyper < num_hyperstack; cur_hyper++)
+	{
+		for (int j = 0; j < vol_per_hyper; j++)
+		{
+			ini_idx = j - smooth_seg / 2;
+			ini_idx = std::max(ini_idx, 0);
+			end_idx = std::min(j + smooth_seg / 2, vol_per_hyper - 1);
+			smooth_seg_size = end_idx - ini_idx + 1;
+			for (int FM_idx = 0; FM_idx < FM_trace; FM_idx++)// FM data structure 11111 22222 33333 44444 55555 .... 12345 represent time(volume indices) 5 FMs are sorted in the same way for each block
+			{
+				float LS_os = 0;
+				float os_counter = 0;
+				int cur_idx;
+				cur_FM_idx = (cur_hyper * vol_per_hyper + j) * FM_trace + FM_idx;
+				for (int cur_smooth_seg = 0; cur_smooth_seg < smooth_seg_size; cur_smooth_seg++)
+				{
+					cur_idx = (cur_hyper * vol_per_hyper + ini_idx + cur_smooth_seg) * FM_trace + FM_idx;
+					//printf("current index is %d, current value is %f", cur_idx, *(fitting_para_h + cur_idx * fit_para_num + 5));
+					if (!isnan(*(fitting_para_h + cur_idx * fit_para_num + 5)))
+					{
+						LS_os += *(fitting_para_h + cur_idx * fit_para_num + 5);
+						++os_counter;
+					}
+				}
+				*(test_LS_os + cur_FM_idx) = (double)*(fitting_para_h + cur_FM_idx * fit_para_num + 5);
+				*(fitting_para_h + cur_FM_idx * fit_para_num + 5) = LS_os / os_counter;
+				
+			}
+		}
+	}
 }

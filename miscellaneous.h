@@ -1,4 +1,5 @@
 #include <vector>
+//#include <algorithm>
 using std::vector;
 /*
 typedef std::vector<double> DoubleVec;
@@ -57,4 +58,5 @@ DoubleVec interpolation(DoubleVec x, DoubleVec y,
 #ifndef FUNCTIONS_H_INCLUDED
 #define FUNCTIONS_H_INCLUDED
 vector<vector<vector<float>>> LS_os_calc_SM(float* fitting_para_SM_h, float* map_ptr_t_h_SM, float* map_ptr_x_h_SM, float* map_ptr_y_h_SM, float cam_map_size_ptr, float cam_map_size_y_ptr, float num_vol_ptr, float SM_num, float xybinsize_SM, int smooth_seg_SM);
+void LS_os_calc_FM(float* fitting_para_h, double* test_LS_os, int& num_vol, float& stationary_pos_ptr, float& vol_per_hyper_ptr, int& smooth_seg, int& FM_trace);
 #endif

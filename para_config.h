@@ -1,4 +1,4 @@
-#define seg_size 11 //unit pixel  has to be odd number
+#define seg_size 19 //unit pixel  has to be odd number
 //#define cam_map_size 276  // row
 //#define cam_map_size_y 276  // column
 #define LS_stepsize 400 //unit nm
@@ -18,7 +18,7 @@
 #define p_value 0.002  // unit    the h value, at which point cdf achieves 0.002, is defined as initial h   smooth out noise induced error 
 #define float_zero 0
 #define block_size 256
-#define iterations 50	//main algorithm para
+#define iterations 30	//main algorithm para
 #define TOLERANCE 1e-6f    //main algorithm para
 #define ACCEPTANCE 1.5f    //main algorithm para
 #define INIT_LAMBDA 1.0f	//main algorithm para
@@ -42,16 +42,7 @@
 
 // z initialization calibration to lattice profile is entailed
 /*
-* stepsize 5nm
+* stepsize 10nm
 * LS_stepsize/step_size=80 data points covers 400 nm (-200 to 200)
 */
 
-/*
-* CRLB doesn't agree with localization precision
-* 1. re-define likelihood function  XXXXXXXXXXXXX
-* 2. difference between ChiSq and likelihood function in 2010 paper
-* 3. reduce fitting area to 11*11*3  XXXXXXXXXXXXX
-*
-*
-*
-*/

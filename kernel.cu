@@ -19,7 +19,7 @@ __global__ void kernel_cuda_fitting(fitting_config* para_config, const float* co
 	{
 		float offset_global = 0;
 		bool offset_fit;
-		if (para_config->num_fitting_para == 6)             // config   num_fitting_para(5 or 6)   initial emitter idx    number of emitters to fit
+		if (para_config->num_fitting_para == 6)           // config   num_fitting_para(5 or 6)   initial emitter idx    number of emitters to fit
 			offset_fit = true;
 		else
 			offset_fit = false;
@@ -86,11 +86,24 @@ __global__ void kernel_cuda_fitting(fitting_config* para_config, const float* co
 		}
 		else
 		{
-			for (int i = 0; i < 6; i++)
-				if (!isnan(*(fitting_para_d + idx * fit_para_num + i)))
-					NewTheta[i] = *(fitting_para_d + idx * fit_para_num + i);
-				else
-					NewTheta[i] = 0.001;
+			//if (para_config->num_slice < 2)
+			{
+				kernel_bg_eval(data_cur, offset_map_d, gain_map_d, &pos_x, &pos_y, NewTheta, para_config->num_slice, para_config->cam_x);
+				kernel_h_bg_init(data_cur, offset_map_d, gain_map_d, &pos_x, &pos_y, NewTheta, para_config->num_slice, para_config->cam_x);
+				kernel_xy_init(data_cur, offset_map_d, gain_map_d, &pos_x, &pos_y, NewTheta, para_config->num_slice, para_config->cam_x);
+				*(NewTheta + 2) = 0.001;
+				*(NewTheta + 5) = 0.001;
+			}
+			//else
+			/*
+			{
+				for (int i = 0; i < 6; i++)
+					if (!isnan(*(fitting_para_d + idx * fit_para_num + i)))
+						NewTheta[i] = *(fitting_para_d + idx * fit_para_num + i);
+					else
+						NewTheta[i] = 0.001;
+			}
+			*/
 			// fitting SM using offset of FM light sheet 
 			/*
 			if (para_config->num_slice == 5)
