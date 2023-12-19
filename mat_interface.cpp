@@ -47,9 +47,9 @@ void cudasafe(cudaError_t err, char* str, int lineNumber)
 int main()
 {
 	////////////////////////////// read in fitting information //////////////////////////////////
-	string Cur_dir = "M:\\Hao\\2023\\5_15\\MT_AF647_prim_ab_10nM\\2023-05-15_17-50-27_FOV3001";
+	string Cur_dir = "M:\\Hao\\2023\\5_15\\MT_AF647_prim_ab_10nM\\fov4\\2023-05-15_23-09-33_fov4004";
 	string scan_mode = "m1"; // m0 offset = 16  m1 offset = -16(wrong sign)  m0 should have been -16 and m1 should have been +16
-	bool FM_fit = false;
+	bool FM_fit = true;
 	bool SM_fit = true;
 	MATFile* curent_mat;
 	mxArray* pa;
@@ -264,12 +264,10 @@ int main()
 	memset(LogLikelihood_SM_h, 0, SM_num * sizeof(float));
 	memset(device_debug_SM_h, 0, SM_num* iterations * 2 * sizeof(float));
 
-	int* para_config_h = new int[3];      // num_para(5 or 6)     number of emitters to fit  slice_number
-	int* para_config_d;
 	int deviceCount = 0;
 	cudaDeviceProp deviceProp;
 	cudaGetDeviceCount(&deviceCount);
-	cudaGetDeviceProperties(&deviceProp, 0);
+	cudaGetDeviceProperties(&deviceProp, 1);
 	cudaSetDevice(0);
 	//int dev_idx;
 	//int use_dev = 0;
@@ -286,59 +284,13 @@ int main()
 	float used_mem;
 	MATFile* pmat;
 	mxArray* pa1;
-	///////////////////////////////////////////////////////////////////////////////////////////////////////
-	/*
-	double* fitting_para_h_doulbe = new double[SM_num * fit_para_num];
-	string SM_os_test = seg_data_path + "fitting_result_SM_m0.mat";
-	const char* SM_os_test_char = SM_os_test.c_str();
-	curent_mat = matOpen(SM_os_test_char, "r");
-	matGetNextVariableInfo(curent_mat, &name);
-	pa = matGetVariable(curent_mat, name);
-	memcpy(fitting_para_h_doulbe, (double*)mxGetData(pa), SM_num* fit_para_num * sizeof(double));
-	for (int i = 0; i < SM_num * fit_para_num; i++)
-	{
-		*(fitting_para_SM_h + i) = (float)*(fitting_para_h_doulbe + i);
-	}
-
-	vector<vector<vector<float>>> mat_os_SM_smo = LS_os_calc_SM(fitting_para_SM_h, map_ptr_t_h_SM, map_ptr_x_h_SM, map_ptr_y_h_SM, cam_map_size_ptr, cam_map_size_y_ptr, num_vol_ptr, SM_num, xybinsize_SM, smooth_seg_SM);
 	
-	float x_range = ceil(cam_map_size_ptr / (xybinsize_SM / pixel_size_cam));
-	float y_range = ceil(cam_map_size_y_ptr / (xybinsize_SM / pixel_size_cam));
-	float t_range = num_vol_ptr;
-	double* for_matlab = new double[x_range * y_range * t_range];
-	int idx_mat;
-	for (int t = 0; t < t_range; t++)
-	{
-		for (int y = 0; y < y_range; y++)
-		{
-			for (int x = 0; x < x_range; x++)
-			{
-				idx_mat = x_range * y_range * t + y_range * y + x;
-				*(for_matlab + idx_mat) = (double) mat_os_SM_smo[t][y][x];
-			}
-		}
-	}
-	string SM_os_aver = seg_data_path + "SM_os_aver.mat";
-	const char* SM_os_aver_char = SM_os_aver.c_str();
-	pmat = matOpen(SM_os_aver_char, "w");
-	pa1 = mxCreateDoubleMatrix(x_range * y_range , t_range, mxREAL);
-	memcpy((void*)(mxGetPr(pa1)), (void*)for_matlab, x_range* y_range* t_range * sizeof(double));
-	matPutVariable(pmat, "SM_os_aver", pa1);
-	mxDestroyArray(pa1);
-	matClose(pmat);
-	*/
-	/////////////////////////////////////////////////////////////////////////////////////////////
-	int fitting_times;
-	if (slice_num_FM > 1)
-		fitting_times = 2;
-	else
-		fitting_times = 1;
 	// fiducial marker fitting
-
-	fitting_times = 1;
-
+	int fitting_times;
+	bool LS_os_FM = true;
 	if (FM_fit)
 	{
+		fitting_times = 1;
 	for (int fitting_stage = 0; fitting_stage < fitting_times; fitting_stage++)
 	{
 		for (int seg_idx = 0; seg_idx < num_seg_FM; seg_idx++)
@@ -350,7 +302,7 @@ int main()
 			else
 				cur_seg_size = FM_num - seg_idx * cuda_seg_size;
 			// global const in
-			fitting_config FM_fit_para_h(fit_para_num, cur_seg_size, slice_num_FM, cam_map_size, cam_map_size_y, 0);
+			fitting_config FM_fit_para_h(LS_os_FM, cur_seg_size, slice_num_FM, cam_map_size, cam_map_size_y, 0);
 			fitting_config* FM_fit_para_d;
 			cudaSetDevice(0);
 			cudaMalloc((void**)&coef_det_d, spline_x * spline_y * spline_z * num_coef_per_pix * sizeof(float));
@@ -367,11 +319,10 @@ int main()
 			cudaMalloc((void**)&data_d, seg_size * seg_size * slice_num_FM * cur_seg_size * sizeof(float));
 			cudaMalloc((void**)&map_ptr_x_d, cur_seg_size * sizeof(float));
 			cudaMalloc((void**)&map_ptr_y_d, cur_seg_size * sizeof(float));
-			//cudaMalloc((void**)&para_config_d, 3 * sizeof(int));
+			cudaMalloc((void**)&FM_fit_para_d, sizeof(FM_fit_para_h));
 			cudaMemset(data_d, 0, seg_size * seg_size * slice_num_FM * cur_seg_size * sizeof(float));
 			cudaMemset(map_ptr_x_d, 0, cur_seg_size * sizeof(float));
 			cudaMemset(map_ptr_y_d, 0, cur_seg_size * sizeof(float));
-			//cudaMemset(para_config_d, 0, 3 * sizeof(int));
 			// global argument out
 			cudaMalloc((void**)&fitting_para_d, fit_para_num * cur_seg_size * sizeof(float));   // if I can only allocate memory without initialization???
 			cudaMalloc((void**)&CRLBs_d, fit_para_num * cur_seg_size * sizeof(float));
@@ -382,24 +333,17 @@ int main()
 			cudaMemset(LogLikelihood_d, 0, cur_seg_size * sizeof(float));
 			cudaMemset(device_debug_d, 0, cur_seg_size * iterations * 2 * sizeof(float));
 			dimGrid = ceil((float)cur_seg_size / (float)block_size);
-			if ((fitting_stage == 0) && (slice_num_FM > 1))
-				FM_fit_para_h.num_fitting_para = fit_para_num;
-			else
-				FM_fit_para_h.num_fitting_para = (fit_para_num - 1);
-			//  *(para_config_h + 1) = cur_seg_size;
-			//  *(para_config_h + 2) = slice_num_FM;
-			cudaMalloc((void**)&FM_fit_para_d, sizeof(FM_fit_para_h));
+			
 			cudaMemcpy(FM_fit_para_d, &FM_fit_para_h, sizeof(FM_fit_para_h), cudaMemcpyHostToDevice);
 			cudaMemcpy(data_d, data_h_FM + cur_ini_idx * seg_size * seg_size * slice_num_FM, seg_size * seg_size * slice_num_FM * cur_seg_size * sizeof(float), cudaMemcpyHostToDevice);
 			cudaMemcpy(map_ptr_x_d, map_ptr_x_h_FM + cur_ini_idx, cur_seg_size * sizeof(float), cudaMemcpyHostToDevice);
 			cudaMemcpy(map_ptr_y_d, map_ptr_y_h_FM + cur_ini_idx, cur_seg_size * sizeof(float), cudaMemcpyHostToDevice);
-			//cudaMemcpy(para_config_d, para_config_h, 3 * sizeof(int), cudaMemcpyHostToDevice);    // LS offset estimate and initialize fitting parameter
-			cudaMemcpy(fitting_para_d, fitting_para_h + cur_ini_idx * fit_para_num, fit_para_num * cur_seg_size * sizeof(int), cudaMemcpyHostToDevice);
-			cudaMemcpy(CRLBs_d, CRLBs_h + cur_ini_idx * fit_para_num, fit_para_num * cur_seg_size * sizeof(int), cudaMemcpyHostToDevice);
+			// To investigate localization precision vs with/without light sheet offset fitting code should be adapted here
+			//cudaMemcpy(fitting_para_d, fitting_para_h + cur_ini_idx * fit_para_num, fit_para_num * cur_seg_size * sizeof(int), cudaMemcpyHostToDevice);
+			//cudaMemcpy(CRLBs_d, CRLBs_h + cur_ini_idx * fit_para_num, fit_para_num * cur_seg_size * sizeof(int), cudaMemcpyHostToDevice);
 			cudaSetDevice(0);
 			cuda_fitting(dimGrid, dimBlock, FM_fit_para_d, coef_det_d, coef_exc_d, data_d, offset_map_d, var_map_d, gain_map_d, map_ptr_x_d, map_ptr_y_d, fitting_para_d, CRLBs_d, LogLikelihood_d, device_debug_d);
 			//cudaGetDevice(&dev_idx);
-			//printf("current used device is %d\n", dev_idx);
 			err = cudaDeviceSynchronize();
 			printf("cudaDeviceSynchronize error status: %s\n", cudaGetErrorString(err));
 			cudaMemGetInfo(&free_byte, &total_byte);
@@ -430,9 +374,7 @@ int main()
 			mxDestroyArray(pa1);
 			matClose(pmat);
 		}
-
 	}
-	
 	
 	// FM fitting output
 	double* fitting_para_crlb = new double[FM_num * fit_para_num];
@@ -496,13 +438,24 @@ int main()
 	
 
 	// single molecule fitting
-	
-	if (slice_num_SM > 1)
-		fitting_times = 2;
-	else
-		fitting_times = 1;
+	// number of slices per segment and if to fit light sheet offset should be carefully configured or otherwise the fitting kernel could fail
+	if (SM_fit)
+	{
 	fitting_times = 1;
-
+	float* LS_os_t_trace = new float[num_vol];
+	string LS_os_dir_full = seg_data_path + "LS_os_" + scan_mode + ".mat";
+	const char* LS_os_dir = LS_os_dir_full.c_str();
+	curent_mat = matOpen(LS_os_dir, "r");
+	matGetNextVariableInfo(curent_mat, &name);
+	pa = matGetVariable(curent_mat, name);
+	memcpy(LS_os_t_trace, (float*)mxGetData(pa), num_vol * sizeof(float));
+	int time_idx;
+	for (int SM_idx = 0; SM_idx < SM_num; SM_idx++)
+	{
+		time_idx = (int)*(map_ptr_t_h_SM + SM_idx);
+		*(fitting_para_SM_h + 5 + SM_idx * fit_para_num) = *(LS_os_t_trace + time_idx - 1);
+	}
+	bool LS_os_SM = true;
 	for (int fitting_stage = 0; fitting_stage < fitting_times; fitting_stage++)
 	{
 		for (int seg_idx = 0; seg_idx < num_seg_SM; seg_idx++)
@@ -525,21 +478,14 @@ int main()
 				cur_seg_size = cuda_seg_size;
 			else
 				cur_seg_size = SM_num - seg_idx * cuda_seg_size;
-			fitting_config SM_fit_para_h(fit_para_num, cur_seg_size, slice_num_SM, cam_map_size, cam_map_size_y, 1);
+			fitting_config SM_fit_para_h(LS_os_SM, cur_seg_size, slice_num_SM, cam_map_size, cam_map_size_y, 1);
 			fitting_config* SM_fit_para_d;
 			cudaMalloc((void**)&data_d, seg_size * seg_size * slice_num_SM * cur_seg_size * sizeof(float));
 			cudaMalloc((void**)&map_ptr_x_d, cur_seg_size * sizeof(float));
 			cudaMalloc((void**)&map_ptr_y_d, cur_seg_size * sizeof(float));
-			//cudaMalloc((void**)&para_config_d, 3 * sizeof(int));
 			cudaMemset(data_d, 0, seg_size * seg_size * slice_num_SM * cur_seg_size * sizeof(float));
 			cudaMemset(map_ptr_x_d, 0, cur_seg_size * sizeof(float));
 			cudaMemset(map_ptr_y_d, 0, cur_seg_size * sizeof(float));
-			//cudaMemset(para_config_d, 0, 3 * sizeof(int));
-			if ((fitting_stage == 0) && (slice_num_SM > 1))
-				SM_fit_para_h.num_fitting_para = fit_para_num;
-			else
-				SM_fit_para_h.num_fitting_para = (fit_para_num - 1);
-			SM_fit_para_h.num_fitting_para = (fit_para_num - 1);
 			cudaMalloc((void**)&SM_fit_para_d, sizeof(SM_fit_para_h));
 			cudaMemcpy(SM_fit_para_d, &SM_fit_para_h, sizeof(SM_fit_para_h), cudaMemcpyHostToDevice);
 			// global argument out
@@ -553,14 +499,10 @@ int main()
 			cudaMemset(device_debug_d, 0, cur_seg_size * iterations * 2 * sizeof(float));
 
 			dimGrid = ceil((float)cur_seg_size / (float)block_size);
-			*para_config_h = (fit_para_num - 1);
-			*(para_config_h + 1) = cur_seg_size;
-			*(para_config_h + 2) = slice_num_SM;
 
 			cudaMemcpy(data_d, data_h_SM + cur_ini_idx * seg_size * seg_size * slice_num_SM, seg_size * seg_size * slice_num_SM * cur_seg_size * sizeof(float), cudaMemcpyHostToDevice);
 			cudaMemcpy(map_ptr_x_d, map_ptr_x_h_SM + cur_ini_idx, cur_seg_size * sizeof(float), cudaMemcpyHostToDevice);
 			cudaMemcpy(map_ptr_y_d, map_ptr_y_h_SM + cur_ini_idx, cur_seg_size * sizeof(float), cudaMemcpyHostToDevice);
-			//cudaMemcpy(para_config_d, para_config_h, 3 * sizeof(int), cudaMemcpyHostToDevice);    // LS offset estimate and initialize fitting parameter
 			cudaMemcpy(fitting_para_d, fitting_para_SM_h + cur_ini_idx * fit_para_num, fit_para_num * cur_seg_size * sizeof(int), cudaMemcpyHostToDevice);
 			cudaSetDevice(0);
 			cuda_fitting(dimGrid, dimBlock, SM_fit_para_d, coef_det_d, coef_exc_d, data_d, offset_map_d, var_map_d, gain_map_d, map_ptr_x_d, map_ptr_y_d, fitting_para_d, CRLBs_d, LogLikelihood_d, device_debug_d);
@@ -580,36 +522,6 @@ int main()
 			printf("reset error status: %s\n", cudaGetErrorString(err));
 			printf("fitting stage %d, segment set %d fitting finished, %d segment sets left\n\n", fitting_stage + 1, seg_idx + 1, num_seg_SM - seg_idx - 1);
 		}
-		/*
-		if ((fitting_stage == 0)&&(slice_num_SM>1))
-		{
-			vector<vector<vector<float>>> mat_os_SM_smo = LS_os_calc_SM(fitting_para_SM_h, map_ptr_t_h_SM, map_ptr_x_h_SM, map_ptr_y_h_SM, cam_map_size_ptr, cam_map_size_y_ptr, num_vol_ptr, SM_num, xybinsize_SM, smooth_seg_SM);
-			float x_range = ceil(cam_map_size_ptr / (xybinsize_SM / pixel_size_cam));
-			float y_range = ceil(cam_map_size_y_ptr / (xybinsize_SM / pixel_size_cam));
-			float t_range = num_vol_ptr;
-			double* for_matlab = new double[x_range * y_range * t_range];
-			int idx_mat;
-			for (int t = 0; t < t_range; t++)
-			{
-				for (int y = 0; y < y_range; y++)
-				{
-					for (int x = 0; x < x_range; x++)
-					{
-						idx_mat = x_range * y_range * t + y_range * y + x;
-						*(for_matlab + idx_mat) = (double)mat_os_SM_smo[t][y][x];
-					}
-				}
-			}
-			string SM_os_aver = seg_data_path + "SM_os_aver_" + scan_mode + ".mat";
-			const char* SM_os_aver_char = SM_os_aver.c_str();
-			pmat = matOpen(SM_os_aver_char, "w");
-			pa1 = mxCreateDoubleMatrix(x_range * y_range, t_range, mxREAL);
-			memcpy((void*)(mxGetPr(pa1)), (void*)for_matlab, x_range * y_range * t_range * sizeof(double));
-			matPutVariable(pmat, "SM_os_aver", pa1);
-			mxDestroyArray(pa1);
-			matClose(pmat);
-		}
-		*/
 	}
 	// cuda_kernel end
 	// SM fitting output
@@ -672,10 +584,10 @@ int main()
 	matPutVariable(pmat, "test", pa1);
 	mxDestroyArray(pa1);
 	matClose(pmat);
-	
+	}
 	//delete[] fitting_para_crlb, fitting_para_end, fitting_para_ChiSq, device_debug_out;
 	// .mat output end
-	//delete[] coef_det_h1, coef_exc_h1, data_h_FM, offset_map_h1, var_map_h1, gain_map_h1, map_ptr_x_h_FM, map_ptr_y_h_FM, para_config_h;
+	//delete[] coef_det_h1, coef_exc_h1, data_h_FM, offset_map_h1, var_map_h1, gain_map_h1, map_ptr_x_h_FM, map_ptr_y_h_FM;
 	//delete[] fitting_para_h, CRLBs_h, LogLikelihood_h, device_debug_h;
 	//delete[] offset_map_h2, var_map_h2, gain_map_h2, coef_det_h2, coef_exc_h2;
 	

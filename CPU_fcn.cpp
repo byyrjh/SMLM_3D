@@ -131,9 +131,9 @@ void LS_os_calc_FM(float* fitting_para_h, double* test_LS_os, int& num_vol, floa
 						++os_counter;
 					}
 				}
-				*(test_LS_os + cur_FM_idx) = (double)*(fitting_para_h + cur_FM_idx * fit_para_num + 5);
-				*(fitting_para_h + cur_FM_idx * fit_para_num + 5) = LS_os / os_counter;
 				
+				*(fitting_para_h + cur_FM_idx * fit_para_num + 5) = LS_os / os_counter;
+				*(test_LS_os + cur_FM_idx) = (double)*(fitting_para_h + cur_FM_idx * fit_para_num + 5);
 			}
 		}
 	}
