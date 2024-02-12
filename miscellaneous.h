@@ -57,6 +57,11 @@ DoubleVec interpolation(DoubleVec x, DoubleVec y,
 */
 #ifndef FUNCTIONS_H_INCLUDED
 #define FUNCTIONS_H_INCLUDED
-vector<vector<vector<float>>> LS_os_calc_SM(float* fitting_para_SM_h, float* map_ptr_t_h_SM, float* map_ptr_x_h_SM, float* map_ptr_y_h_SM, float cam_map_size_ptr, float cam_map_size_y_ptr, float num_vol_ptr, float SM_num, float xybinsize_SM, int smooth_seg_SM);
+vector<vector<vector<float>>> LS_os_calc_SM(float* fitting_para_SM_h, float* CRLBs_SM_h, float* map_ptr_t_h_SM, float* map_ptr_x_h_SM, float* map_ptr_y_h_SM, float cam_map_size_ptr, float cam_map_size_y_ptr, float num_vol_ptr, float SM_num, float xybinsize_SM, int smooth_seg_SM);
 void LS_os_calc_FM(float* fitting_para_h, double* test_LS_os, int& num_vol, float& stationary_pos_ptr, float& vol_per_hyper_ptr, int& smooth_seg, int& FM_trace);
+void LS_plane_fitting(float* LS_plane_coeff, float* LS_os_data, int x, int y, int t);
+void MatInvN(float* M, float* Minv, int sz);
+void LS_plane_coeff_smooth(float* LS_plane_coeff_raw, float* LS_plane_coeff_smo, int smooth_range, int t_range);
+void Smooth_generic(float* output, float* input, int smooth_range);
+void LS_os_filter(float* output, float* input, int x, int y, int t);
 #endif

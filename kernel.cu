@@ -322,6 +322,53 @@ __global__ void kernel_cuda_fitting(fitting_config* para_config, const float* co
 	
 }
 
+__global__ void kernel_cuda_plane_coef(ls_plane_config* ls_plane_info_d, float* LS_plane_fit_coef_d, const float* LS_os_map_d)
+{
+	const int idx = (blockIdx.x) * block_size + threadIdx.x;
+	//if (idx >= ls_plane_info_d->t_range) return;
+	if (idx < 2700) return;
+	int num_valid_data = 0;
+	int ptr_mat;
+	
+	for (int i = 0; i < ls_plane_info_d->y_range; i++)
+	{
+		for (int j = 0; j < ls_plane_info_d->x_range; j++)
+		{
+			ptr_mat = idx * (ls_plane_info_d->x_range) * (ls_plane_info_d->y_range) + i * (ls_plane_info_d->y_range) + j;
+			if (!isnan(*(LS_os_map_d + ptr_mat)))
+				num_valid_data++;
+		}
+	}
+	
+	float* x_pos = new float[num_valid_data];
+	float* y_pos = new float[num_valid_data];
+	float* ls_os = new float[num_valid_data];
+	//cudaMalloc(&x_pos, sizeof(float) * num_valid_data);
+	//cudaMalloc(&y_pos, sizeof(float) * num_valid_data);
+	//cudaMalloc(&ls_os, sizeof(float) * num_valid_data);
+	if (x_pos == nullptr)
+		printf("Memory allocation failed\n");
+	num_valid_data = 0;
+	
+	for (int i = 0; i < ls_plane_info_d->y_range; i++)
+	{
+		for (int j = 0; j < ls_plane_info_d->x_range; j++)
+		{
+			ptr_mat = idx * (ls_plane_info_d->x_range) * (ls_plane_info_d->y_range) + i * (ls_plane_info_d->y_range) + j;
+			if (!isnan(*(LS_os_map_d + ptr_mat)))
+			{
+				*(x_pos + num_valid_data) = (float)j;
+				*(y_pos + num_valid_data) = (float)i;
+				*(ls_os + num_valid_data) = *(LS_os_map_d + ptr_mat);
+				num_valid_data++;
+			}	
+		}
+	}
+	
+	if (idx == 3500)
+		//printf("%f\n", *(ls_os + 0));
+		printf("hello world\n");
+}
 
 extern "C"
 void cuda_fitting(dim3 dimgrid, dim3 dimblock, fitting_config* para_config, const float* coef_det_d, const float* coef_exc_d, const float* data_d, const float* offset_map_d, const float* var_map_d,
@@ -330,6 +377,10 @@ void cuda_fitting(dim3 dimgrid, dim3 dimblock, fitting_config* para_config, cons
 	kernel_cuda_fitting << <dimgrid, dimblock >> > (para_config, coef_det_d, coef_exc_d, data_d, offset_map_d, var_map_d, gain_map_d, map_ptr_x_d, map_ptr_y_d, fitting_para_d, CRLBs_d, LogLikelihood_d, device_debug_d);
 }
 
+void cuda_plane_coef(dim3 dimgrid, dim3 dimblock, ls_plane_config* ls_plane_info_d, float* LS_plane_fit_coef_d, const float* LS_os_map_d)
+{
+	kernel_cuda_plane_coef << <dimgrid, dimblock >> > (ls_plane_info_d, LS_plane_fit_coef_d, LS_os_map_d);
+}
 
  fitting_config::fitting_config(bool LS_os_fit_in, int num_launch_thre_in, int num_slice_in, int cam_x_in, int cam_y_in, int fitting_obj_in) 
 	{
@@ -340,3 +391,9 @@ void cuda_fitting(dim3 dimgrid, dim3 dimblock, fitting_config* para_config, cons
 		cam_y = cam_y_in;
 		fitting_obj = fitting_obj_in;
 	}
+ ls_plane_config::ls_plane_config(int x_range_in, int y_range_in, int t_range_in)
+ {
+	 x_range = x_range_in;
+	 y_range = y_range_in;
+	 t_range = t_range_in;
+ }
