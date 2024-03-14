@@ -19,6 +19,7 @@
 #include <math.h>
 #include "miscellaneous.h"
 #include "shared_struc.h"
+#include <stdexcept>
 
 using std::cout; using std::cin; using std::endl; using std::string; using std::vector;
 using std::filesystem::current_path; using std::to_string;
@@ -48,9 +49,9 @@ void cudasafe(cudaError_t err, char* str, int lineNumber)
 int main()
 {
 	////////////////////////////// read in fitting information //////////////////////////////////
-	string Cur_dir = "N:\\Lucas\\10_LLSM_CudaFitter\\03_HeLa_SMLM\\2023-08-16-Hela-aTUB\\2023-08-16_15-41-01_Hela-ATUB-230815-AB-FOV7-002";
+	string Cur_dir = "M:\\Hao\\2023\\4_25\\MT_sec_AB_5mM\\fov6";
 	string scan_mode = "m1"; // m0 offset = 16  m1 offset = -16(wrong sign)  m0 should have been -16 and m1 should have been +16
-	bool FM_fit = false;
+	bool FM_fit = true;
 	bool SM_fit = true;
 	MATFile* curent_mat;
 	mxArray* pa;
@@ -130,6 +131,7 @@ int main()
 	float* map_ptr_y_h_FM = new float[FM_num];
 	float* map_ptr_x_h_SM = new float[SM_num];
 	float* map_ptr_y_h_SM = new float[SM_num];
+	float* map_ptr_z_h_SM = new float[SM_num];
 	float* map_ptr_t_h_SM = new float[SM_num];
 	
 	string cam_cali_path = cali_path + "camera1_cali.mat";
@@ -165,6 +167,7 @@ int main()
 	string map_ptr_x_SM_name_str = seg_data_path + "map_ptr_x_SM_" + scan_mode + ".mat";
 	string map_ptr_y_FM_name_str = seg_data_path + "map_ptr_y_FM_" + scan_mode + ".mat";
 	string map_ptr_y_SM_name_str = seg_data_path + "map_ptr_y_SM_" + scan_mode + ".mat";
+	string map_ptr_z_SM_name_str = seg_data_path + "map_ptr_z_SM_" + scan_mode + ".mat";
 	string map_ptr_t_SM_name_str = seg_data_path + "map_ptr_t_SM_" + scan_mode + ".mat";
 	
 	const char* coef_mx_name_det1 = coef_mx_name_det_str.c_str();
@@ -175,6 +178,7 @@ int main()
 	const char* data_SM_mx_name = data_SM_mx_name_str.c_str();
 	const char* map_ptr_x_SM_name = map_ptr_x_SM_name_str.c_str();
 	const char* map_ptr_y_SM_name = map_ptr_y_SM_name_str.c_str();
+	const char* map_ptr_z_SM_name = map_ptr_z_SM_name_str.c_str();
 	const char* map_ptr_t_SM_name = map_ptr_t_SM_name_str.c_str();
 
 	curent_mat = matOpen(coef_mx_name_det1, "r");
@@ -230,82 +234,17 @@ int main()
 	pa = matGetVariable(curent_mat, name);
 	memcpy(map_ptr_y_h_SM, (float*)mxGetData(pa), SM_num * sizeof(float));
 
+	curent_mat = matOpen(map_ptr_z_SM_name, "r");
+	matGetNextVariableInfo(curent_mat, &name);
+	pa = matGetVariable(curent_mat, name);
+	memcpy(map_ptr_z_h_SM, (float*)mxGetData(pa), SM_num * sizeof(float));
+
 	curent_mat = matOpen(map_ptr_t_SM_name, "r");
 	matGetNextVariableInfo(curent_mat, &name);
 	pa = matGetVariable(curent_mat, name);
 	memcpy(map_ptr_t_h_SM, (float*)mxGetData(pa), SM_num * sizeof(float));
 
-	/*
-
-	double* LS_os_coef = new double[3800 * 3];
-	string LS_os_dir_full = seg_data_path + "SM_os_coeff_" + scan_mode + ".mat";
-	const char* LS_os_dir = LS_os_dir_full.c_str();
-	curent_mat = matOpen(LS_os_dir, "r");
-	matGetNextVariableInfo(curent_mat, &name);
-	pa = matGetVariable(curent_mat, name);
-	memcpy(LS_os_coef, mxGetData(pa), 3800 * 3 * sizeof(double));
-
-	double* fitting_res = new double[471180 * 6];
-	LS_os_dir_full = seg_data_path + "fitting_result_SM_" + scan_mode + ".mat";
-	const char* LS_os_dir_res = LS_os_dir_full.c_str();
-	curent_mat = matOpen(LS_os_dir_res, "r");
-	matGetNextVariableInfo(curent_mat, &name);
-	pa = matGetVariable(curent_mat, name);
-	memcpy(fitting_res, mxGetData(pa), 471180 * 6 * sizeof(double));
-
-	float* LS_plane_coeff_smo = new float[3800 * 3];
-	for (int i = 0; i < 3800 * 3; i++)
-	{
-		*(LS_plane_coeff_smo + i) = (float)(*(LS_os_coef + i));
-		printf("the coefficient is %f\n", *(LS_plane_coeff_smo + i));
-	}
-
 	
-
-	// fit light sheet plane and initialize light sheet offset for next fitting round
-
-	
-
-	int time_idx;
-	float x_idx;
-	float y_idx;
-	float cur_os;
-	for (int SM_idx = 0; SM_idx < 471180; SM_idx++)
-	{
-		time_idx = (int)*(map_ptr_t_h_SM + SM_idx)-1;
-		x_idx = ceil(*(map_ptr_x_h_SM + SM_idx) / (xybinsize_SM / pixel_size_cam)) - 1;
-		y_idx = ceil(*(map_ptr_y_h_SM + SM_idx) / (xybinsize_SM / pixel_size_cam)) - 1;
-		//printf("coefficient is %f\n", *(LS_plane_coeff_smo + time_idx * 3));
-		//printf("coefficient is %f\n", *(LS_plane_coeff_smo + time_idx * 3+1));
-		//printf("coefficient is %f\n", *(LS_plane_coeff_smo + time_idx * 3+2));
-		cur_os = (*(LS_plane_coeff_smo + time_idx * 3)) * x_idx + (*(LS_plane_coeff_smo + time_idx * 3 + 1)) * y_idx + *(LS_plane_coeff_smo + time_idx * 3 + 2);
-		printf("the light sheet offset is %f\n", cur_os);
-	}
-
-
-	
-
-
-
-
-
-
-	*/
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -520,6 +459,7 @@ int main()
 	{
 		double* fitting_para_crlb_SM = new double[SM_num * fit_para_num];
 		double* fitting_para_end_SM = new double[SM_num * fit_para_num];
+		double* fitting_para_crlb_check_SM = new double[SM_num * fit_para_num];
 		double* fitting_para_ChiSq_SM = new double[SM_num];
 		double* device_debug_out_SM = new double[iterations * 2 * SM_num];
 		fitting_times = 2;
@@ -527,10 +467,12 @@ int main()
 	bool LS_os_SM;
 	string fit_round;
 	bool skip_first_round;
-	string SM_os_aver = seg_data_path + "SM_os_aver_" + scan_mode + ".mat";
-	const char* SM_os_aver_char = SM_os_aver.c_str();
-	std::filesystem::path LS_os_path = SM_os_aver;
-	skip_first_round = std::filesystem::exists(LS_os_path);
+	string SM_fitting_res_round1 = seg_data_path + "fitting_result_SM_" + scan_mode + "_round1.mat";
+	const char* SM_fitting_res_round1_char = SM_fitting_res_round1.c_str();
+	string SM_fitting_res_crlb_round1 = seg_data_path + "fitting_result_crlb_SM_" + scan_mode + "_round1.mat";
+	const char* SM_fitting_res_crlb_round1_char = SM_fitting_res_crlb_round1.c_str();
+	std::filesystem::path fitting_res_path = SM_fitting_res_round1;
+	skip_first_round = std::filesystem::exists(fitting_res_path);
 	float x_range = ceil(cam_map_size_ptr / (xybinsize_SM / pixel_size_cam));
 	float y_range = ceil(cam_map_size_y_ptr / (xybinsize_SM / pixel_size_cam));
 	float t_range = num_vol_ptr;
@@ -614,9 +556,11 @@ int main()
 			fit_round = "2";
 
 		memset(fitting_para_end_SM, 0, SM_num* fit_para_num * sizeof(double));
+		memset(fitting_para_crlb_check_SM, 0, SM_num * fit_para_num * sizeof(double));
 		for (int i = 0; i < SM_num * fit_para_num; i++)
 		{
 			*(fitting_para_end_SM + i) = (double)*(fitting_para_SM_h + i);
+			*(fitting_para_crlb_check_SM + i) = (double)*(CRLBs_SM_h + i);
 		}
 		string file_fitting_para_full_SM = seg_data_path + "fitting_result_SM_" + scan_mode + "_round" + fit_round + ".mat";
 		const char* file_fitting_para_SM = file_fitting_para_full_SM.c_str();
@@ -626,79 +570,72 @@ int main()
 		matPutVariable(pmat, "fitting_results", pa1);
 		mxDestroyArray(pa1);
 		matClose(pmat);
+
+		string file_fitting_para_crlb_full_SM = seg_data_path + "fitting_result_crlb_SM_" + scan_mode + "_round" + fit_round + ".mat";
+		const char* file_fitting_para_crlb_SM = file_fitting_para_crlb_full_SM.c_str();
+		pmat = matOpen(file_fitting_para_crlb_SM, "w");
+		pa1 = mxCreateDoubleMatrix(fit_para_num, SM_num, mxREAL);
+		memcpy((void*)(mxGetPr(pa1)), (void*)fitting_para_crlb_check_SM, fit_para_num * SM_num * sizeof(double));
+		matPutVariable(pmat, "fitting_results_crlb", pa1);
+		mxDestroyArray(pa1);
+		matClose(pmat);
 		}
 		
-		if ((fitting_stage == 0) & (!skip_first_round))
+		if ((fitting_stage == 0) & skip_first_round)
 		{
-			vector<vector<vector<float>>> mat_os_SM_smo = LS_os_calc_SM(fitting_para_SM_h, CRLBs_SM_h, map_ptr_t_h_SM, map_ptr_x_h_SM, map_ptr_y_h_SM, cam_map_size_ptr, cam_map_size_y_ptr, num_vol_ptr, SM_num, xybinsize_SM, smooth_seg_SM);			
-			double* LS_os_map = new double[x_range * y_range * t_range];
-			int idx_mat;
-			for (int t = 0; t < t_range; t++)
-			{
-				for (int y = 0; y < y_range; y++)
-				{
-					for (int x = 0; x < x_range; x++)
-					{
-						idx_mat = x_range * y_range * t + y_range * y + x;
-						*(LS_os_map + idx_mat) = (double)mat_os_SM_smo[t][y][x];
-						*(LS_os_data + idx_mat) = mat_os_SM_smo[t][y][x];
-					}
-				}
-			}
-			// write
-			pmat = matOpen(SM_os_aver_char, "w");
-			pa1 = mxCreateDoubleMatrix(x_range * y_range, t_range, mxREAL);
-			memcpy((void*)(mxGetPr(pa1)), (void*)LS_os_map, x_range * y_range * t_range * sizeof(double));
-			matPutVariable(pmat, "SM_os_aver", pa1);
-			mxDestroyArray(pa1);
-			matClose(pmat);
-		}
-		else if(fitting_stage == 0)
-		{
-			double* LS_os_data_mat = new double[x_range * y_range * t_range];
-			// read
-			curent_mat = matOpen(SM_os_aver_char, "r");
+			double* fitting_res_mat = new double[SM_num * fit_para_num];
+			curent_mat = matOpen(SM_fitting_res_round1_char, "r");
 			matGetNextVariableInfo(curent_mat, &name);
 			pa = matGetVariable(curent_mat, name);
-			memcpy(LS_os_data_mat, mxGetData(pa), x_range* y_range* t_range * sizeof(double));
-			for (int i = 0; i < x_range * y_range * t_range; i++)
-				*(LS_os_data + i) = (float)*(LS_os_data_mat + i);	
+			memcpy(fitting_res_mat, mxGetData(pa), SM_num * fit_para_num * sizeof(double));
+			double* fitting_res_crlb_mat = new double[SM_num * fit_para_num];
+			curent_mat = matOpen(SM_fitting_res_crlb_round1_char, "r");
+			matGetNextVariableInfo(curent_mat, &name);
+			pa = matGetVariable(curent_mat, name);
+			memcpy(fitting_res_crlb_mat, mxGetData(pa), SM_num* fit_para_num * sizeof(double));
+			for (int i = 0; i < SM_num * fit_para_num; i++)
+			{
+				*(fitting_para_SM_h + i) = (float)*(fitting_res_mat + i);
+				*(CRLBs_SM_h + i) = (float)*(fitting_res_crlb_mat + i);
+			}
+					
+		}
+
+
+		else if(fitting_stage == 0)
+		{
+			
+			
+
 		}
 		if (fitting_stage == 0)
 		{
-			/*
-			double* LS_os_t_trace = new double[3800 * 900];
-			string LS_os_dir_full = seg_data_path + "SM_os_aver_" + scan_mode + ".mat";
-			const char* LS_os_dir = LS_os_dir_full.c_str();
-			curent_mat = matOpen(LS_os_dir, "r");
-			matGetNextVariableInfo(curent_mat, &name);
-			pa = matGetVariable(curent_mat, name);
-			memcpy(LS_os_t_trace, mxGetData(pa), 3800 * 900 * sizeof(double));
+			int z_range = 50;
+			vector<vector<vector<vector<float>>>> mat_os_SM_smo = LS_os_calc_SM_full(fitting_para_SM_h, CRLBs_SM_h, map_ptr_t_h_SM, map_ptr_x_h_SM, map_ptr_y_h_SM, map_ptr_z_h_SM, cam_map_size_ptr, cam_map_size_y_ptr, num_vol_ptr, SM_num, xybinsize_SM, smooth_seg_SM);
+			vector<vector<vector<vector<float>>>> mat_os_st_smoothed = LS_os_filter_full(&mat_os_SM_smo, x_range, y_range, z_range, t_range);
 			
-			for (int i = 0; i < x_range * y_range * t_range; i++)
-			{
-				*(LS_os_data + i) = (float)(*(LS_os_t_trace + i));
-			}
-			int x_map_range = 30;
-			int y_map_range = 30;
-			int t_map_range = 3800;
-			*/
 
 			// fit light sheet plane and initialize light sheet offset for next fitting round
 
-			float* LS_plane_coeff = new float[t_range * 3];
-			float* LS_plane_coeff_smo = new float[t_range * 3];
-			double* LS_os_coeff = new double[t_range * 3];
-			float* LS_os_data_filter = new float[x_range * y_range * t_range];
-			float* LS_os_data_filter_smooth = new float[x_range * y_range * t_range];
-			double* LS_os_AO_map = new double[x_range * y_range * t_range];
-			LS_plane_fitting(LS_plane_coeff, LS_os_data, x_range, y_range, t_range);
-			LS_plane_coeff_smooth(LS_plane_coeff, LS_plane_coeff_smo, 100, t_range);
-			LS_os_filter(LS_os_data_filter, LS_os_data, x_range, y_range, t_range);
-			for (int t = 0; t < t_range * 3; t++)
-				*(LS_os_coeff + t) = (double)LS_plane_coeff_smo[t];
-			for (int t = 0; t < t_range * x_range * y_range; t++)
-				*(LS_os_AO_map + t) = (double)LS_os_data_filter[t];
+			double* LS_os_AO_map = new double[x_range * y_range * z_range * t_range];
+			
+			int arr_iter;
+			for (int t = 0; t < t_range; t++)
+			{
+				for (int z = 0; z < z_range; z++)
+				{
+					for (int y = 0; y < y_range; y++)
+					{
+						for (int x = 0; x < x_range; x++)
+						{
+							arr_iter = x + y * y_range + z * x_range * y_range + t * x_range * y_range * z_range;
+							*(LS_os_AO_map + arr_iter) = (double)mat_os_st_smoothed[t][z][y][x];
+						}
+					}
+				}
+			}
+				//*(LS_os_AO_map + t) = (double)LS_os_data_filter[t];
+			
 			int time_idx;
 			float x_idx;
 			float y_idx;
@@ -706,31 +643,31 @@ int main()
 			for (int SM_idx = 0; SM_idx < SM_num; SM_idx++)
 			{
 				time_idx = (int)*(map_ptr_t_h_SM + SM_idx) - 1;
-				x_idx = ceil(*(map_ptr_x_h_SM + SM_idx) / (xybinsize_SM / pixel_size_cam)) - 1;
-				y_idx = ceil(*(map_ptr_y_h_SM + SM_idx) / (xybinsize_SM / pixel_size_cam)) - 1;
-				AO_map_idx = time_idx * x_range * y_range + y_idx * y_range + x_idx;
-				*(fitting_para_SM_h + 5 + SM_idx * fit_para_num) = *(LS_os_data_filter + AO_map_idx);
+				float x_pos = *(map_ptr_x_h_SM + SM_idx) + round(*(fitting_para_SM_h + SM_idx * fit_para_num));
+				float y_pos = *(map_ptr_y_h_SM + SM_idx) + round(*(fitting_para_SM_h + SM_idx * fit_para_num + 1));
+				float z_pos = *(map_ptr_z_h_SM + SM_idx) + round((*(fitting_para_SM_h + SM_idx * fit_para_num + 2)) * step_size / LS_stepsize);
+				int idx_x = (int)(ceil(x_pos / (xybinsize_SM / pixel_size_cam)) - 1);
+				int idx_y = (int)(ceil(y_pos / (xybinsize_SM / pixel_size_cam)) - 1);
+				int idx_z = (int)(z_pos - 1);
+				if (idx_x >= 0 && idx_x < x_range && idx_y >= 0 && idx_y < y_range && idx_z >= 0 && idx_z < z_range)
+				{
+					if (!isnan(mat_os_st_smoothed[time_idx][idx_z][idx_y][idx_x]))
+						*(fitting_para_SM_h + 5 + SM_idx * fit_para_num) = mat_os_st_smoothed[time_idx][idx_z][idx_y][idx_x];
+				}
+				//AO_map_idx = time_idx * x_range * y_range + y_idx * y_range + x_idx;
+				//*(fitting_para_SM_h + 5 + SM_idx * fit_para_num) = *(LS_os_data_filter + AO_map_idx);
 				//*(fitting_para_SM_h + 5 + SM_idx * fit_para_num) = (*(LS_plane_coeff_smo + time_idx * 3)) * x_idx + (*(LS_plane_coeff_smo + time_idx * 3 + 1)) * y_idx + *(LS_plane_coeff_smo + time_idx * 3 + 2);
 			}
-
-			string SM_os_AO_map = seg_data_path + "SM_os_AO_map_" + scan_mode + ".mat";
+			
+			string SM_os_AO_map = seg_data_path + "SM_os_AO_4D_map_" + scan_mode + ".mat";
 			const char* SM_os_AO_map_char = SM_os_AO_map.c_str();
 			curent_mat = matOpen(SM_os_AO_map_char, "w");
-			pa = mxCreateDoubleMatrix(x_range * y_range, t_range, mxREAL);
-			memcpy((void*)(mxGetPr(pa)), (void*)LS_os_AO_map, t_range * y_range * x_range * sizeof(double));
-			matPutVariable(curent_mat, "LS_os_AO_map", pa);
+			pa = mxCreateDoubleMatrix(x_range * y_range * z_range, t_range, mxREAL);
+			memcpy((void*)(mxGetPr(pa)), (void*)LS_os_AO_map, t_range * z_range * y_range * x_range * sizeof(double));
+			matPutVariable(curent_mat, "LS_os_AO_4D_map", pa);
 			mxDestroyArray(pa);
 			matClose(curent_mat);
-			/*
-			string SM_os_coeff = seg_data_path + "SM_os_coeff_" + scan_mode + ".mat";
-			const char* SM_os_coeff_char = SM_os_coeff.c_str();
-			curent_mat = matOpen(SM_os_coeff_char, "w");
-			pa = mxCreateDoubleMatrix(3, t_range, mxREAL);
-			memcpy((void*)(mxGetPr(pa)), (void*)LS_os_coeff, t_range * 3 * sizeof(double));
-			matPutVariable(curent_mat, "SM_os_coeff", pa);
-			mxDestroyArray(pa);
-			matClose(curent_mat);
-			*/
+			
 		}
 		
 
@@ -783,11 +720,5 @@ int main()
 	mxDestroyArray(pa1);
 	matClose(pmat);
 	}
-	//delete[] fitting_para_crlb, fitting_para_end, fitting_para_ChiSq, device_debug_out;
-	// .mat output end
-	//delete[] coef_det_h1, coef_exc_h1, data_h_FM, offset_map_h1, var_map_h1, gain_map_h1, map_ptr_x_h_FM, map_ptr_y_h_FM;
-	//delete[] fitting_para_h, CRLBs_h, LogLikelihood_h, device_debug_h;
-	//delete[] offset_map_h2, var_map_h2, gain_map_h2, coef_det_h2, coef_exc_h2;
-	
-    
+
 }

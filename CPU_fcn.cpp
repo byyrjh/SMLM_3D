@@ -103,6 +103,119 @@ vector<vector<vector<float>>> LS_os_calc_SM(float* fitting_para_SM_h, float* CRL
 	return mat_os_SM_smo; // returned vector contains sparse NANs
 }
 
+
+vector<vector<vector<vector<float>>>> LS_os_calc_SM_full(float* fitting_para_SM_h, float* CRLBs_SM_h, float* map_ptr_t_h_SM, float* map_ptr_x_h_SM, float* map_ptr_y_h_SM, float* map_ptr_z_h_SM, float cam_map_size_ptr, float cam_map_size_y_ptr, float num_vol_ptr, float SM_num, float xybinsize_SM, int smooth_seg_SM)
+{
+	// smooth in t by hyperstack based averaging
+	float x_range = ceil(cam_map_size_ptr / (xybinsize_SM / pixel_size_cam));
+	float y_range = ceil(cam_map_size_y_ptr / (xybinsize_SM / pixel_size_cam));
+	float z_range = 50;
+	float t_range = num_vol_ptr;
+	int num_vol = (int)num_vol_ptr;
+	// kickout criterion 1 NAN 2 absolute LS offset (within 600) 3 crlb (this is a good metric within 25) 4 ChiSq (insignificant metric)
+	// crlb = 25 is the real value. The conversion relationship is crlb_real = sqrt(crlb_raw)*10
+	vector<vector<vector<vector<float>>>> mat_os_SM(num_vol, vector<vector<vector<float>>>(z_range, vector<vector<float>>(y_range, vector<float>(x_range))));
+	vector<vector<vector<vector<float>>>> mat_counter_SM(num_vol, vector<vector<vector<float>>>(z_range, vector<vector<float>>(y_range, vector<float>(x_range))));
+	vector<vector<vector<vector<float>>>> mat_os_SM_smo(num_vol, vector<vector<vector<float>>>(z_range, vector<vector<float>>(y_range, vector<float>(x_range))));
+	// Light sheet offset register and averaging
+	bool kickout;
+	for (int i = 0; i < SM_num; i++) // offset registering
+	{
+		kickout = false;
+		int idx_t = (*(map_ptr_t_h_SM + i)) - 1;
+		kickout = kickout || isnan(*(fitting_para_SM_h + i * fit_para_num));
+		kickout = kickout || isnan(*(fitting_para_SM_h + i * fit_para_num + 1));
+		kickout = kickout || isnan(*(fitting_para_SM_h + i * fit_para_num + 2));
+		kickout = kickout || isnan(*(fitting_para_SM_h + i * fit_para_num + 5));
+		if (sqrt(*(CRLBs_SM_h + i * fit_para_num + 5)) * 10 > 25)
+			kickout = true;
+		if ((*(fitting_para_SM_h + i * fit_para_num + 5) < -60) || (*(fitting_para_SM_h + i * fit_para_num + 5) > 60)) //600/10 = 60
+			kickout = true;
+		if (!kickout)
+		{
+			float x_pos = *(map_ptr_x_h_SM + i) + round(*(fitting_para_SM_h + i * fit_para_num));
+			float y_pos = *(map_ptr_y_h_SM + i) + round(*(fitting_para_SM_h + i * fit_para_num + 1));
+			float z_pos = *(map_ptr_z_h_SM + i) + round((*(fitting_para_SM_h + i * fit_para_num + 2))* step_size/ LS_stepsize);
+			kickout = kickout || x_pos<0 || x_pos>cam_map_size_ptr;
+			kickout = kickout || y_pos<0 || y_pos>cam_map_size_y_ptr;
+			int idx_x = (int)(ceil(x_pos / (xybinsize_SM / pixel_size_cam)) - 1);
+			int idx_y = (int)(ceil(y_pos / (xybinsize_SM / pixel_size_cam)) - 1);
+			int idx_z = (int)(z_pos - 1);
+			kickout = kickout || idx_x <0 || idx_x >(x_range - 1);
+			kickout = kickout || idx_y <0 || idx_y >(y_range - 1);
+			kickout = kickout || idx_z <0 || idx_z >(z_range - 1);
+			if (!kickout)
+			{
+				mat_os_SM[idx_t][idx_z][idx_y][idx_x] += *(fitting_para_SM_h + i * fit_para_num + 5);	
+				mat_counter_SM[idx_t][idx_z][idx_y][idx_x] += 1;
+				
+			}
+		}
+	}
+	for (int t = 0; t < t_range; t++) //light sheet offset averaging
+	{
+		for (int z = 0; z < z_range; z++)
+		{
+			for (int y = 0; y < y_range; y++)
+			{
+				for (int x = 0; x < x_range; x++)
+				{
+					if (mat_counter_SM[t][z][y][x] == 0)
+						++mat_counter_SM[t][z][y][x]; // this step cannot avoid NAN, which originate from initialization of vector
+					mat_os_SM[t][z][y][x] = mat_os_SM[t][z][y][x] / mat_counter_SM[t][z][y][x];
+				}
+			}
+		}
+	}
+	// Light sheet offset smoothing in t
+	// very slow, comment it for testing purpose
+	float cur_os;
+	float sum;
+	float counter;
+	int ini_idx;
+	int end_idx;
+	int smooth_seg_size;
+	
+	for (int z = 0; z < z_range; z++)
+	{
+		for (int i = 0; i < y_range; i++)
+		{
+			for (int j = 0; j < x_range; j++)
+			{
+				for (int k = 0; k < t_range; k++)
+				{
+					ini_idx = k - smooth_seg_SM / 2;
+					end_idx = k + smooth_seg_SM / 2;
+					if (ini_idx < 0)
+					{
+						smooth_seg_size = 1 + smooth_seg_SM / 2 + k;
+						ini_idx = 0;
+					}
+					else if (end_idx > (num_vol - 1))
+						smooth_seg_size = smooth_seg_SM / 2 + num_vol - k;
+					else
+						smooth_seg_size = 1 + smooth_seg_SM;
+					sum = 0;
+					counter = 0;
+					for (int m = 0; m < smooth_seg_size; m++)
+					{
+						if ((mat_os_SM[ini_idx + m][z][i][j]) != 0) // this step skip NANs
+						{
+							sum += mat_os_SM[ini_idx + m][z][i][j];
+							++counter;
+						}
+					}
+					mat_os_SM_smo[k][z][i][j] = sum / counter;  // this step creates NANs
+				}
+			}
+		}
+	}
+	
+	return mat_os_SM_smo; // returned vector contains dense NANs
+}
+
+
+
 void LS_os_calc_FM(float* fitting_para_h, double* test_LS_os, int& num_vol, float& stationary_pos_ptr, float& vol_per_hyper_ptr, int& smooth_seg, int& FM_trace)
 {
 	int vol_per_hyper = vol_per_hyper_ptr - stationary_pos_ptr + 1;
@@ -369,4 +482,88 @@ void LS_os_filter(float* LS_os_data_filter, float* LS_os_data, int x, int y, int
 		}
 		*(LS_os_data_filter + data_idx) = sum / counter;
 	}
+}
+
+
+vector<vector<vector<vector<float>>>> LS_os_filter_full(vector<vector<vector<vector<float>>>>* LS_os_data_raw, int x, int y, int z, int t)
+{
+	// input 4D vector 
+	// dynamically calculate xyz mapped array for each time point
+	
+	double r_filter[9] = { sqrt(2), 1, sqrt(2), 1, 0, 1, sqrt(2), 1, sqrt(2) };
+	double sigma_filter = 0.5;
+	float filter_weight[9];
+	double exp_in;
+	float counter;
+	float sum;
+	int ptr_offset;
+	int temp_idx;
+	int temp_x;
+	int temp_y;
+	int conv_x;
+	int conv_y;
+	int cur_x;
+	int cur_y;
+	int cur_z;
+	float temp_weight;
+	for (int i = 0; i < 9; i++)
+	{
+		filter_weight[i] = (float)exp(-pow(r_filter[i], 2) / 2 / pow(sigma_filter, 2));
+	}
+	float* arr_os_map = new float[x*y*z];
+	vector<vector<vector<vector<float>>>> mat_os_st_smoothed(t, vector<vector<vector<float>>>(z, vector<vector<float>>(y, vector<float>(x))));
+	for (int i = 0; i < t; i++)
+	{
+		// initialize arr_os_map 
+		for (int z_idx = 0; z_idx < z; z_idx ++)
+		{
+			for (int y_idx = 0; y_idx < y; y_idx++)
+			{
+				for (int x_idx = 0; x_idx < x; x_idx++)
+				{
+					*(arr_os_map + x_idx + y_idx * y + z_idx * x * y) = (*LS_os_data_raw)[i][z_idx][y_idx][x_idx];
+				}
+			}
+		}
+		// apply mask to the temp matrix
+		for (int data_idx = 0; data_idx < x * y * z; data_idx++)
+		{
+			counter = 0;
+			sum = 0;
+			for (int k = 0; k < 3; k++)
+			{
+				ptr_offset = (k - 1) * x * y;
+				if (data_idx + ptr_offset >= 0 && data_idx + ptr_offset < z * x * y)
+				{
+					temp_idx = (data_idx + ptr_offset) % (x * y);
+					temp_y = temp_idx / y;
+					temp_x = temp_idx % x;
+					for (int j = 0; j < 3; j++)
+					{
+						for (int i = 0; i < 3; i++)
+						{
+							conv_y = temp_y - 1 + j;
+							conv_x = temp_x - 1 + i;
+							if (conv_y >= 0 && conv_y < y && conv_x >= 0 && conv_x < x)
+							{
+								temp_idx = data_idx + ptr_offset + (j - 1) * y + (i - 1);
+								temp_weight = filter_weight[j * 3 + i];
+								if (!isnan(*(arr_os_map + temp_idx))) // this condition still cannot avoid NANs
+								{
+									sum += *(arr_os_map + temp_idx) * temp_weight;
+									counter += temp_weight;
+								}
+							}
+						}
+					}
+				}
+			}
+			// register smoothed matrix
+			cur_z = data_idx / (x * y);
+			cur_y = (data_idx % (x * y)) / y;
+			cur_x = (data_idx % (x * y)) % x;
+			mat_os_st_smoothed[i][cur_z][cur_y][cur_x] = sum / counter; // this line causes NAN
+		}
+	}
+	return mat_os_st_smoothed;
 }
