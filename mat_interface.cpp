@@ -49,10 +49,10 @@ void cudasafe(cudaError_t err, char* str, int lineNumber)
 int main()
 {
 	////////////////////////////// read in fitting information //////////////////////////////////
-	string Cur_dir = "M:\\Hao\\2023\\4_25\\MT_sec_AB_5mM\\fov6";
+	string Cur_dir = "S:\\AG Nienhaus\\data\\__alumni__\\Hao_Jia\\manuscript\\p1_volumetric_fitting\\figure2\\fig2b\\Lucas\\data\\m1";
 	string scan_mode = "m1"; // m0 offset = 16  m1 offset = -16(wrong sign)  m0 should have been -16 and m1 should have been +16
 	bool FM_fit = true;
-	bool SM_fit = true;
+	bool SM_fit = false;
 	MATFile* curent_mat;
 	mxArray* pa;
 	const char* name;
@@ -303,12 +303,16 @@ int main()
 	
 	// fiducial marker fitting
 	int fitting_times;
-	bool LS_os_FM = true;
+	bool LS_os_FM;
 	if (FM_fit)
 	{
 		fitting_times = 1;
 	for (int fitting_stage = 0; fitting_stage < fitting_times; fitting_stage++)
 	{
+		if (fitting_stage == 0)
+			LS_os_FM = true;
+		else
+			LS_os_FM = false;
 		for (int seg_idx = 0; seg_idx < num_seg_FM; seg_idx++)
 		{
 			int cur_seg_size;
@@ -355,7 +359,7 @@ int main()
 			cudaMemcpy(map_ptr_x_d, map_ptr_x_h_FM + cur_ini_idx, cur_seg_size * sizeof(float), cudaMemcpyHostToDevice);
 			cudaMemcpy(map_ptr_y_d, map_ptr_y_h_FM + cur_ini_idx, cur_seg_size * sizeof(float), cudaMemcpyHostToDevice);
 			// To investigate localization precision vs with/without light sheet offset fitting code should be adapted here
-			//cudaMemcpy(fitting_para_d, fitting_para_h + cur_ini_idx * fit_para_num, fit_para_num * cur_seg_size * sizeof(int), cudaMemcpyHostToDevice);
+			cudaMemcpy(fitting_para_d, fitting_para_h + cur_ini_idx * fit_para_num, fit_para_num * cur_seg_size * sizeof(int), cudaMemcpyHostToDevice);
 			//cudaMemcpy(CRLBs_d, CRLBs_h + cur_ini_idx * fit_para_num, fit_para_num * cur_seg_size * sizeof(int), cudaMemcpyHostToDevice);
 			cudaSetDevice(0);
 			cuda_fitting(dimGrid, dimBlock, FM_fit_para_d, coef_det_d, coef_exc_d, data_d, offset_map_d, var_map_d, gain_map_d, map_ptr_x_d, map_ptr_y_d, fitting_para_d, CRLBs_d, LogLikelihood_d, device_debug_d);
@@ -376,7 +380,7 @@ int main()
 		}
 		
 		//  smooth LS offset
-		if ((fitting_stage == 0) && (slice_num_SM > 1))
+		if ((fitting_stage == 0) && (slice_num_FM > 1))
 		{
 			double* test_LS_os = new double[FM_trace * num_vol];
 			memset(test_LS_os, 0, FM_trace * num_vol * sizeof(double));
